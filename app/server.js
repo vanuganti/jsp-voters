@@ -79,7 +79,7 @@ function processFile(filename) {
 		}
 		sendStatus("Page " + page + " ...");
 		page++;
-	}, 30000);
+	}, 10000);
 
 	let infile="./uploads/" + filename.toLowerCase();
 	const spawn  = require('child_process').spawn, py = spawn('python3', ['./../convert-voters.py', '--input', infile]);
