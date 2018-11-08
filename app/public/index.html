@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" ng-app="APP">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -25,7 +25,6 @@
 		        scrollTop: $("#main-status").height() + 100
 	        }, 300);
 	        if (msg.includes("Total records: ")) {
-	        	console.log("Can be downloaded");
 	          $("#download").removeAttr('disabled');
 	          li=document.createElement("li");
 	          li.appendChild(document.createTextNode("Please download the converted CSV file..."));
@@ -34,13 +33,10 @@
 	      });
       });
 	    function file_selected() {
-	    	console.log("File selected");
-	      var button = document.querySelector('.upload');
 	      $("#upload").removeAttr('disabled');
 	      $("#status").html("");
       }
 	    function upload_file() {
-	    	console.log("Upload file called");
 	      $("#download").prop("disabled", true);
 	      var formData = new FormData();
 	      var files = document.getElementById("fileUploaded").files;
@@ -98,7 +94,7 @@
       </div>
     </div>
   </div>
-  <div class="row-fluid" class="form-area">
+  <div class="row-fluid form-area">
     <div class="row-fluid upload-form">
       <form class="md-form" id='formupload' name='formupload' method='post' action='' enctype="multipart/form-data" onsubmit="return false">
         <div class="form-group">

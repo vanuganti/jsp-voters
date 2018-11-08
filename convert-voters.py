@@ -722,7 +722,7 @@ def convert_image_file_to_text(args, input_file):
     logger.debug("Converting IMAGE to TEXT ...")
     os.system("gs -dNOPAUSE -r300 -q -dBATCH -sDEVICE=tiffg4 -sOutputFile=" + tiff_file + ' ' + input_file)
     text_file=tiff_file.replace(".tiff", "")
-    logger.info("Converting IMAGE to TEXT file (Will take few minutes depending on the size)...", input_file, text_file)
+    logger.info("Converting IMAGE to TEXT file (Will take few minutes depending on the size)...")
     os.system("tesseract " + tiff_file + ' ' + text_file + " --psm 6 2>/dev/null")
     return parse_voters_data(args, text_file + ".txt")
 
