@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en" ng-app="APP">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>PATH ANALYTICS - Voter Analytics</title>
+    <link rel="shortcut icon" type="image/png" sizes="16x16" href="//assets.pathanalytics.ai/images/path-favicon.png">
+    <link rel="stylesheet" type="text/css" href="/static/css/style.css"/>
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/css/bootstrap.min.css">
+    <link href="//fonts.googleapis.com/css?family=Open+Sans|Roboto" rel="stylesheet">
+    <script src="//code.jquery.com/jquery-3.3.1.min.js" crossorigin="anonymous"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/js/bootstrap.min.js" crossorigin="anonymous"></script>
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script>
+	    $(function () {
+	      var socket = io();
+	      socket.on('STATUS', function (msg) {
+	      	console.log(msg);
+	      	let li=document.createElement("li");
+	        li.appendChild(document.createTextNode(msg));
+	        document.getElementById("status").appendChild(li);
+	        $("#main-status").animate({
+		        scrollTop: $("#main-status").height() + 100
+	        }, 300);
+	        if (msg.includes("Total records: ")) {
+	        	console.log("Can be downloaded");
+	          $("#download").removeAttr('disabled');
+	          li=document.createElement("li");
+	          li.appendChild(document.createTextNode("Please download the converted CSV file..."));
+	          document.getElementById("status").appendChild(li)
+          }
+	      });
+      });
+	    function file_selected() {
+	    	console.log("File selected");
+	      var button = document.querySelector('.upload');
+	      $("#upload").removeAttr('disabled');
+	      $("#status").html("");
+      }
+	    function upload_file() {
+	    	console.log("Upload file called");
+	      $("#download").prop("disabled", true);
+	      var formData = new FormData();
+	      var files = document.getElementById("fileUploaded").files;
+	      for (var i = 0; i < files.length; i++) {
+		      var file = files[i];
+		      formData.append('files[]', file, file.name);
+	      }$.ajax( {
+            url:'/upload',
+            type: 'POST',
+            processData: false,
+            contentType: false,
+            data: formData,
+		        success: function() {
+            	console.log("Uploaded successfully");
+            }
+	      });
+      }
+      function download_file() {
+	      let files = document.getElementById("fileUploaded").files;
+	      console.log(files[0].name);
+	      let fileName = files[0].name.replace(/.pdf|.png|.jpeg|.txt|.csv/gi, ".csv");
+	      $.ajax({
+		      url: '/download/' + fileName,
+		      type: 'GET',
+		      xhrFields: {
+			      responseType: 'blob'
+		      },
+		      success: function (data) {
+			      var a = document.createElement('a');
+			      var url = window.URL.createObjectURL(data);
+			      a.href = url;
+			      a.download = fileName;
+			      a.click();
+			      window.URL.revokeObjectURL(url);
+		      }
+	      });
+      }
+  </script>
+  <style>
+
+  </style>
+</head>
+
+<body>
+  <div id="main_menu" class="navbar navbar-dark navbar-inverse navbar-fixed-top navbar-main navbar-small" role="navigation">
+    <div class="container-fluid">
+      <div class="navbar-header">
+        <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target=".navbar-collapse">
+          <span class="sr-only">Toggle navigation</span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="/"><span class="navbar-logo">Voter Analytics<span class="beta"> beta</span></a>
+      </div>
+    </div>
+  </div>
+  <div class="row-fluid" class="form-area">
+    <div class="row-fluid upload-form">
+      <form class="md-form" id='formupload' name='formupload' method='post' action='' enctype="multipart/form-data" onsubmit="return false">
+        <div class="form-group">
+          <div class="file-field">
+            <label for="fileUploaded">Upload voter image file for processing...</label>
+            <input type="file" class="form-control-file" name='fileUploaded' id="fileUploaded" onchange="file_selected()">
+          </div>
+        </div>
+        <input type='submit' id='upload' class='button' value="Process file" onclick="upload_file()" disabled>
+        <input type='submit' id='download' class='button' value="Download file" onclick="download_file()" disabled>
+      </form>
+    </div>
+  </div>
+  <div class="row-fluid">
+      <div id="main-status" class="main-status">
+        <ul id="status" class="status"></ul>
+      </div>
+  </div>
+ </body>
+</html>

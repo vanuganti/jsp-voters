@@ -1,0 +1,58 @@
+body {
+  letter-spacing: 0.5px;
+  font-family: "Open Sans", "Lucida Grande", "Lucida Sans Unicode", Arial, sans-serif !important;
+  background-color: #F5F5F5 !important;
+  padding-top: 20px;
+  margin-bottom: 150px !important;
+  height: 100%;
+}
+.navbar-main {
+  height: 30px;
+  border: 0 !important;
+}
+.navbar-brand {
+  height: 45px !important;
+  padding: 10px 10px 10px 10px !important;
+  color: #eee !important;
+  font-size: 1.6em !important;
+  text-transform:capitalize !important;
+  vertical-align: bottom !important;
+  font-weight: 600;
+}
+.beta {
+  font-size: 0.6em;
+  color: #777;
+  margin-left: 5px;
+}
+.upload-form {
+  margin-top: 50px; display: inline-block;
+  padding-left: 20px;
+}
+input:disabled {
+  background-color: grey !important;
+}
+.main-status {
+  margin-top: 50px;
+  padding: 10px;
+  width: 100%;
+  height: 220px;
+  overflow: auto;
+  border-top: 2px solid #F5F5F5;
+  color: #333;
+  font-size: 14px;
+  background-color: #fff;
+}
+.button {
+  background-color: orange
+}
+.status li {
+  padding: 5px;
+  list-style: square;
+  font-weight: 200;
+  font-family: "Lucida Console",monospace;
+}
+
+* {
+  font-family: "Open Sans", sans-serif;
+}
+

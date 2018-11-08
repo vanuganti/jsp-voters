@@ -1,0 +1,80 @@
+const express = require('express');
+const app = express();
+const http = require('http').Server(app);
+const io = require('socket.io')(http);
+const busboy = require('connect-busboy'); //middleware for form/file upload
+const path = require('path');     //used for file path
+const mime = require('mime');
+const fs = require('fs-extra');       //File System - for file manipulation
+
+const logger = require('log4js').getLogger('server');
+logger.level = 'info';
+
+app.use(busboy());
+app.use(express.static(path.join(__dirname, 'public')));
+app.use('/static', express.static('static'));
+
+app.route('/upload')
+    .post(function (req, res, next) {
+        req.pipe(req.busboy);
+        req.busboy.on('file', function (fieldname, file, filename) {
+            sendStatus("Upload started for " + filename);
+            let fstream = fs.createWriteStream(__dirname + '/uploads/' + filename.toLowerCase());
+            file.pipe(fstream);
+            fstream.on('close', function () {
+	            sendStatus("Upload done for " + filename);
+	            processFile(filename);
+                res.redirect('back');
+            });
+        });
+    });
+
+app.get('/download/:file(*)',(req, res) => {
+	let outfile = req.params.file.replace(/.pdf|.png|.jpeg|.txt|.csv/gi, ".csv");
+	let fileLocation = path.join('./output/', outfile);
+	fs.exists(fileLocation, function(exists) {
+		if (exists) {
+			logger.info("Downloading the file ", fileLocation + ", ",  mime.lookup(fileLocation));
+			res.writeHead(200, {
+				"Content-Type": mime.lookup(fileLocation),
+				"Content-Disposition": "attachment; filename=" + outfile
+			});
+			logger.info("1");
+			fs.createReadStream(fileLocation).pipe(res);
+			logger.info("2");
+			sendStatus("File " + outfile + " Downloaded")
+		} else {
+			res.writeHead(400, {"Content-Type": "text/plain"});
+			res.end("ERROR File does not exist");
+			sendStatus("File doesn't exists " + outfile);
+		}
+	});
+});
+
+io.on('connection', function(socket){
+	logger.info('A new WebSocket connection has been established');
+});
+
+const server=http.listen(3000, function() {
+    logger.info("Server started listing on port %d", server.address().port);
+});
+
+function sendStatus(msg) {
+  logger.info(msg);
+  if (!msg.includes("Tesseract")) {
+	  io.emit('STATUS', msg);
+  }
+}
+
+function processFile(filename) {
+	sendStatus("Converting the file ...");
+	let infile="./uploads/" + filename.toLowerCase();
+	const spawn  = require('child_process').spawn, py = spawn('python3', ['./../convert-voters.py', '--input', infile]);
+
+	py.stdout.on('data', function(data) {
+		sendStatus(data.toString().slice(25).replace('./uploads/','').replace('output/','').replace("INFO",""));
+	});
+	py.stderr.on('data', function(data) {
+		sendStatus(data.toString().slice(25).replace('./uploads/','').replace('output/','').replace("INFO",""));
+	});
+}
