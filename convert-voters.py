@@ -629,7 +629,8 @@ def parse_voters_data(args, input_file):
             if args.output:
                 outfile=args.output + "/" + outfile
             with open(outfile, 'w') as myfile:
-                fp = csv.DictWriter(myfile, voters[0].keys(), quoting=csv.QUOTE_ALL)
+                order=['SNO','ID','NAME','FS_NAME','HNO','AGE','SEX']
+                fp = csv.DictWriter(myfile, order, quoting=csv.QUOTE_ALL)
                 fp.writeheader()
                 fp.writerows(voters)
             logger.debug("Output is saved in %s file", outfile)
