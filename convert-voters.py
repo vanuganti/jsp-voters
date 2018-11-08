@@ -719,10 +719,10 @@ def convert_image_file_to_text(args, input_file):
 
     files=os.path.basename(input_file).split(".")
     tiff_file=args.output + "/" + os.path.basename(input_file).replace(files[len(files)-1],'tiff')
-    logger.debug("Converting image %s to %s", input_file, tiff_file)
+    logger.debug("Converting IMAGE to TEXT ...")
     os.system("gs -dNOPAUSE -r300 -q -dBATCH -sDEVICE=tiffg4 -sOutputFile=" + tiff_file + ' ' + input_file)
     text_file=tiff_file.replace(".tiff", "")
-    logger.info("Converting %s to %s.txt TEXT file (Will take few minutes depending on the size)...", input_file, text_file)
+    logger.info("Converting IMAGE to TEXT file (Will take few minutes depending on the size)...", input_file, text_file)
     os.system("tesseract " + tiff_file + ' ' + text_file + " --psm 6 2>/dev/null")
     return parse_voters_data(args, text_file + ".txt")
 

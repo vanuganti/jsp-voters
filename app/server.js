@@ -68,15 +68,32 @@ function sendStatus(msg) {
   }
 }
 
+let fileInProcess=false;
+let page=1;
 function processFile(filename) {
-	sendStatus("Converting the file ...");
+	fileInProcess = true;
+	let interval = setInterval(function() {
+		if (!fileInProcess) {
+			clearInterval(interval);
+			return;
+		}
+		sendStatus("Page " + page + " ...");
+		page++;
+	}, 30000);
+
 	let infile="./uploads/" + filename.toLowerCase();
 	const spawn  = require('child_process').spawn, py = spawn('python3', ['./../convert-voters.py', '--input', infile]);
 
 	py.stdout.on('data', function(data) {
 		sendStatus(data.toString().slice(25).replace('./uploads/','').replace('output/','').replace("INFO",""));
+		if (data.includes("Total records: ")) {
+			fileInProcess=false;
+		}
 	});
 	py.stderr.on('data', function(data) {
 		sendStatus(data.toString().slice(25).replace('./uploads/','').replace('output/','').replace("INFO",""));
+		if (data.includes("Total records: ")) {
+			fileInProcess=false;
+		}
 	});
 }
