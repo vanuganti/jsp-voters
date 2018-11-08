@@ -56,6 +56,8 @@ io.on('connection', function(socket){
 });
 
 const server=http.listen(3000, function() {
+	!fs.existsSync("uploads") && fs.mkdirSync("uploads");
+	!fs.existsSync("output") && fs.mkdirSync("output");
     logger.info("Server started listing on port %d", server.address().port);
 });
 
