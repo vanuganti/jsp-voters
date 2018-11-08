@@ -629,10 +629,9 @@ def parse_voters_data(args, input_file):
             if args.output:
                 outfile=args.output + "/" + outfile
             with open(outfile, 'w') as myfile:
-                wr=csv.writer(myfile, quoting=csv.QUOTE_ALL)
-                wr.writerow(voters[0].keys())
-                for voter in voters:
-                    wr.writerow(voter.values())
+                fp = csv.DictWriter(myfile, voters[0].keys(), quoting=csv.QUOTE_ALL)
+                fp.writeheader()
+                fp.writerows(voters)
             logger.debug("Output is saved in %s file", outfile)
 
         logger.info("Total records: %d, malformed: %d", len(voters), len(malformed))
