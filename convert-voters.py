@@ -475,14 +475,24 @@ class BoothsDataDownloader:
             logger.error(str(e))
 
 
-def get_id_between(line, start, end):
-    cond=str(start) + " |" + str(end)
+def get_id_between(line, start, end, prefix):
+    cond=prefix + str(start) + " | " + str(end) + " "
     ids=re.split(cond, line)
+    logger.debug("Split cond: {}:{} => {} ".format(start, end, ids))
     if len(ids) == 1:
+        logger.debug(" return {}:{}".format(str(start), ids[0].strip().replace(" ","")))
         return [str(start), ids[0].strip().replace(" ",""), False]
     if str(start) + " " not in line:
-        return [str(start), ids[0], True]
+        logger.debug(" return {}:{}:MALFORMED".format(str(start), ids[0].strip().replace(" ","")))
+        return [str(start), ids[0].strip().replace(" ",""), True]
+    logger.debug(" return {}:{}".format(str(start), ids[1].strip().replace(" ","")))
     return [str(start), ids[1].strip().replace(" ",""), False]
+
+def remove_special_chars(str):
+    if str and len(str) > 0:
+        n=re.sub("\||©|=|=.|\+|\_|\$", "", str)
+        return n.strip()
+    return str
 
 def parse_voters_data(args, input_file):
     if not input_file:
@@ -507,6 +517,7 @@ def parse_voters_data(args, input_file):
     last_lsn=0
     last_processed_ids=None
     last_processed_lno=0
+    last_match=None
     try:
         for line in file:
             lno+=1
@@ -514,6 +525,7 @@ def parse_voters_data(args, input_file):
             if sline and len(sline) > 0:
                 if "Address of Polling Station" in sline:
                     booth_name_matched=True
+                    last_match='BOOTH'
                     continue
 
                 if booth_name_matched:
@@ -540,62 +552,94 @@ def parse_voters_data(args, input_file):
                                 last_lsn+=1
                                 pass
                             voters.append(data)
-                            logger.debug("VOTER RECORD {}".format(data))
                         voter={}
+                    last_match='NAME'
                     names=re.split("Elector’s Name:|Elector Name[:;]|Electors Name[:;]|Elector's Name[:;]|Elector’s Name[:;]", sline)
-                    ids=prev_line.split(" ")
-                    if len(ids) > 6:
-                        logger.debug("IDs length mismatch {}, {}".format(len(ids), ids))
-                        for i in range(1,4):
-                            id=get_id_between(prev_line, last_lsn+i, last_lsn+i+1)
-                            voter.setdefault(i-1,{}).update(SNO=id[0])
-                            voter.setdefault(i-1,{}).update(ID=id[1])
-                            if id[2] is True:
-                               logger.warning("Malformed record found for sequence {} at line {} ({})".format(last_lsn+i, lno, prev_line))
-                               malformed.append({ "LINE " + str(lno).rjust(4) : "For Sequence " + str(last_lsn+i).rjust(4) + " => " + prev_line})
-                    else:
+                    if "       " in prev_line:
+                        ids=prev_line.split("       ")
+                        logger.debug("IDS with spaces {}".format(ids))
                         count=0
-                        sno=None
-                        iname=None
-                        for id in ids:
-                            id=id.strip()
-                            if id and id != '':
-                                if not sno:
-                                    if not id.isnumeric():
-                                        logger.warning("SNO is not numeric({}), assigning auto-increment value({}) at line {}".format(id, last_lsn+count+1, lno))
-                                        sno=str(last_lsn+count+1)
+                        found_sno=None
+                        found_id=None
+                        for i in range(0, len(ids)):
+                            id=ids[i].strip()
+                            if len(id) > 0:
+                                if id.isnumeric():
+                                    logger.debug("Found SNO %s at %d", id, i)
+                                    found_sno=id
+                                    continue
+                                else:
+                                    if found_sno:
+                                        logger.debug("Found ID %s at %d", id, i)
+                                        found_id=id.replace(" ","")
+                                    else:
+                                        logger.debug("MISSING ID FOUND %s at %d, matched %d", id, i, last_lsn+count+1)
+                                        found_sno=last_lsn+count+1
+                                if found_sno and found_id:
+                                    logger.debug("Assing ids: {}:{}".format(found_sno, found_id))
+                                    voter.setdefault(count,{}).update(SNO=found_sno)
+                                    voter.setdefault(count,{}).update(ID=found_id)
+                                    count+=1
+                                    found_sno=None
+                                    found_id=None
+                    else:
+                        ids=prev_line.split(" ")
+                        if len(ids) > 6:
+                            logger.debug("IDs length mismatch {}, {}".format(len(ids), ids))
+                            for i in range(1,4):
+                                id=get_id_between(prev_line, last_lsn+i, last_lsn+i+1, "" if i == 1 else " ")
+                                voter.setdefault(i-1,{}).update(SNO=id[0])
+                                voter.setdefault(i-1,{}).update(ID=id[1])
+                                if id[2] is True:
+                                   logger.warning("Malformed record found for sequence {} at line {} ({})".format(last_lsn+i, lno, prev_line))
+                                   malformed.append({ "LINE " + str(lno).rjust(4) : "For Sequence " + str(last_lsn+i).rjust(4) + " => " + prev_line})
+                        else:
+                            count=0
+                            sno=None
+                            iname=None
+                            for id in ids:
+                                id=id.strip()
+                                if id and id != '':
+                                    if not sno:
+                                        if not id.isnumeric():
+                                            logger.warning("SNO is not numeric({}), assigning auto-increment value({}) at line {}".format(id, last_lsn+count+1, lno))
+                                            sno=str(last_lsn+count+1)
+                                            continue
+                                        sno=id
                                         continue
-                                    sno=id
-                                    continue
-                                if id == 'APO':
-                                    if not iname:
-                                        iname=id
-                                    continue
-                                if iname:
-                                    id=str(iname+""+id)
-                                voter.setdefault(count,{}).update(SNO=sno)
-                                voter.setdefault(count,{}).update(ID=id)
-                                sno=None
-                                iname=None
-                                count+=1
+                                    if id == 'APO':
+                                        if not iname:
+                                            iname=id
+                                        continue
+                                    if iname:
+                                        id=str(iname+""+id)
+                                    voter.setdefault(count,{}).update(SNO=sno)
+                                    voter.setdefault(count,{}).update(ID=id)
+                                    sno=None
+                                    iname=None
+                                    count+=1
 
                     count=0
                     last_processed_ids=prev_line
                     last_processed_lno=lno
                     for name in names:
-                        n=name.strip()
+                        n=remove_special_chars(name)
                         if n and n != '':
                             voter.setdefault(count,{}).update(NAME=n)
                             count+=1
+                    continue
                 if "Husband's Name" in sline or "Father's Name" in sline or "Husband" in sline or "Father" in sline or "Mother's Name" in sline or "Mother" in sline or "Other's Name" in sline or "Others Name" in sline or "Other Name" in sline:
+                    last_match='FS_NAME'
                     names=re.split("Husband's Name[:;]|Husband Name[:;]|Husbands Name[:;]|Father's Name[:;]|Father Name[:;]|Fathers Name[:;]|Mothers Name[:;]|Mother Name[:;]|Mother's Name[:;]|Father's Name[;:]|Others Name[:;]|Other Name[:;]|Other's Name[:;]", sline)
                     count=0
                     for name in names:
-                        n=name.strip()
+                        n=remove_special_chars(name)
                         if n and n != '':
                             voter.setdefault(count,{}).update(FS_NAME=n)
                             count+=1
+                    continue
                 if "House No" in sline or "House" in sline:
+                    last_match='HNO'
                     names=re.split("House No[:;]", sline)
                     count=0
                     for name in names:
@@ -603,6 +647,7 @@ def parse_voters_data(args, input_file):
                         if n and n != '':
                             voter.setdefault(count,{}).update(HNO=n)
                             count+=1
+                    continue
                 if "Age" in sline and "Sex" in sline:
                     names=sline.split(" ")
                     l=len(names)
@@ -621,6 +666,18 @@ def parse_voters_data(args, input_file):
                             count+=1
                             age=None
                             sex=None
+                    continue
+                if last_match == 'NAME' or last_match == 'FS_NAME':
+                    names=sline.split("                      ")
+                    logger.debug("Last matched name {}, ids: {}".format(last_match, names))
+                    count=0
+                    for name in names:
+                        n=name.strip()
+                        if n and n != '':
+                            v_name=voter[count][last_match]
+                            v_name += " " + remove_special_chars(n)
+                            voter[count][last_match]=v_name
+                            count+=1
                 prev_line=sline
 
         logger.info("---------------- S U M M A R Y ----------------------")
@@ -720,10 +777,10 @@ def convert_image_file_to_text(args, input_file):
     files=os.path.basename(input_file).split(".")
     tiff_file=args.output + "/" + os.path.basename(input_file).replace(files[len(files)-1],'tiff')
     logger.debug("Converting IMAGE to TEXT ...")
-    os.system("gs -dNOPAUSE -r300 -q -dBATCH -sDEVICE=tiffg4 -sOutputFile=" + tiff_file + ' ' + input_file)
+    os.system("gs -dSAFER -dBATCH -dNOPAUSE -r300 -q -sDEVICE=tiffg4 -sOutputFile=" + tiff_file + ' ' + input_file)
     text_file=tiff_file.replace(".tiff", "")
     logger.info("Converting IMAGE to TEXT file (Will take few minutes depending on the size)...")
-    os.system("tesseract " + tiff_file + ' ' + text_file + " --psm 6 2>/dev/null")
+    os.system("tesseract " + tiff_file + ' ' + text_file + " --psm 6 -l eng -c preserve_interword_spaces=1 quiet")
     return parse_voters_data(args, text_file + ".txt")
 
 
@@ -739,6 +796,68 @@ def process_input_file(input_file, args):
         return convert_image_file_to_text(args, input_file)
 
 
+def test():
+    last_lsn = 27
+    count = 0
+    prev_line = "1 UON 1884386 2 UON1886282 3 UON1 906486"
+    prev_line = "28 AP07048036035 1 29 UON1998699 30 AP070480054723"
+    prev_line = "25          UON1799347                                26          UON1806613                                27          UON1542274"
+    logger.info("LINE {}".format(prev_line))
+    if "          " in prev_line:
+        ids=prev_line.split("          ")
+        for i in range(1, len(ids)):
+            id=ids[i-1].strip()
+            if id.isnumeric():
+                logger.info("SNO: " + id)
+                logger.info("ID: " + ids[1].replace(" ","").strip())
+    else:
+        if "|" in prev_line:
+            ids = prev_line.split(" | ")
+        else:
+            ids = prev_line.split("          ")
+        logger.info("SPLIT LENGTH: {},  {}".format(len(ids), ids))
+        if len(ids) > 6:
+            logger.info("IDs length mismatch {}, {}".format(len(ids), ids))
+            for i in range(1, len(ids)):
+                id=ids[i-1].strip()
+                if id.isnumeric():
+                    logger.info("SNO: " + id)
+                    logger.info("ID: " + ids[1].replace(" ","").strip())
+            for i in range(1, 4):
+                id = get_id_between(prev_line, last_lsn + i, last_lsn + i + 1, "" if i == 1 else "          ")
+                logger.info("SNO: " + id[0])
+                logger.info("ID: " + id[1])
+                if id[2] is True:
+                    logger.warning(
+                        "Malformed record found for sequence {} at line {} ({})".format(last_lsn + i, 1, prev_line))
+        else:
+            count = 0
+            sno = None
+            iname = None
+            for id in ids:
+                id = id.strip()
+                if id and id != '':
+                    if not sno:
+                        if not id.isnumeric():
+                            logger.warning(
+                                "SNO is not numeric({}), assigning auto-increment value({}) at line {}".format(id,
+                                                                                                               last_lsn + count + 1,
+                                                                                                               lno))
+                            sno = str(last_lsn + count + 1)
+                            continue
+                        sno = id
+                        continue
+                    if id == 'APO':
+                        if not iname:
+                            iname = id
+                        continue
+                    if iname:
+                        id = str(iname + "" + id)
+                    logger.info("SNO: " + sno)
+                    logger.info("ID: " + id)
+                    sno = None
+                    iname = None
+                    count += 1
 #
 # process all arguments
 #
@@ -768,5 +887,6 @@ def handle_arguments(parser, args):
 if __name__ == "__main__":
     parser, args = init_options()
     logger.setLevel(logging.DEBUG) if args.debug else logger.setLevel(logging.INFO)
+    #test()
     handle_arguments(parser, args)
 
