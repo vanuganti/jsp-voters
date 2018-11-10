@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+
 import logging
 import argparse
 import os
@@ -7,18 +8,15 @@ import requests
 import csv
 import sys
 import re
-import io
 import time
 import traceback
 from random import randint, choice
 from bs4 import BeautifulSoup
-from concurrent.futures import ThreadPoolExecutor, thread
+from concurrent.futures import ThreadPoolExecutor
 import threading
 import pytesseract
 import asyncio
 from proxybroker import Broker
-import boto3
-
 try:
     from PIL import Image, ImageEnhance, ImageFilter
 except ImportError:
@@ -33,7 +31,6 @@ LOGIN_URL="http://ceoaperms.ap.gov.in/Electoral_Rolls/Rolls.aspx"
 TOTAL_COUNT=0
 FAILED_KEYWORDS=[]
 killThreads=False
-
 CSVLOCK=threading.Lock()
 
 ###################################################################################################
@@ -516,6 +513,8 @@ def parse_voters_data(args, input_file):
     booth_name=None
     last_lsn=0
     last_processed_ids=None
+    area_name=None
+    last_area_name=None
     last_processed_lno=0
     last_match=None
     try:
@@ -523,6 +522,13 @@ def parse_voters_data(args, input_file):
             lno+=1
             sline=line.strip()
             if sline and len(sline) > 0:
+                if "Contd..." in sline:
+                    last_area_name=area_name
+                    area_name=sline.replace("Contd...","").strip()
+                    if last_area_name is None:
+                        last_area_name=area_name
+                    continue
+
                 if "Address of Polling Station" in sline:
                     booth_name_matched=True
                     last_match='BOOTH'
@@ -551,6 +557,7 @@ def parse_voters_data(args, input_file):
                             except Exception as e:
                                 last_lsn+=1
                                 pass
+                            data.update({"AREA": last_area_name})
                             voters.append(data)
                         voter={}
                     last_match='NAME'
@@ -698,6 +705,7 @@ def parse_voters_data(args, input_file):
                     continue
                 if "Age" in sline and "Sex" in sline:
                     names=sline.split(" ")
+                    logger.debug(names)
                     l=len(names)
                     count=0
                     age=None
@@ -706,20 +714,34 @@ def parse_voters_data(args, input_file):
                         obj=obj.strip()
                         if "Age" in obj:
                             try:
-                                age=names[index+1].strip()
+                                c=index+1
+                                age=""
+                                while True:
+                                    age=names[c].strip()
+                                    if age and age != '':
+                                        break
+                                    c+=1
                                 voter.setdefault(count,{}).update(AGE=age)
                             except Exception:
+                                logger.error("Exception age")
                                 age=''
                                 voter.setdefault(count,{}).update(AGE='')
                         elif "Sex" in obj:
                             try:
-                                sex=names[index+1].strip()
+                                c=index+1
+                                sex=""
+                                while True:
+                                    sex=names[c].strip()
+                                    if sex and sex != '':
+                                        break
+                                    c+=1
                                 voter.setdefault(count,{}).update(SEX=sex)
                             except Exception:
+                                logger.error("Exception sex")
                                 sex=''
                                 voter.setdefault(count,{}).update(SEX=sex)
-
                         if age and sex:
+                            logger.debug(voter[count])
                             count+=1
                             age=None
                             sex=None
@@ -737,13 +759,19 @@ def parse_voters_data(args, input_file):
                             count+=1
                 prev_line=sline
 
+        if len(voter) != 0:
+            for v in voter:
+                data=voter[v]
+                data.update({"AREA": last_area_name})
+                voters.append(data)
+
         logger.info("---------------- S U M M A R Y ----------------------")
         if len(voters) > 0:
             outfile=os.path.basename(input_file).split(".")[0] + ".csv" if input_file else "output.csv"
             if args.output:
                 outfile=args.output + "/" + outfile
             with open(outfile, 'w') as myfile:
-                order=['SNO','ID','NAME','FS_NAME','HNO','AGE','SEX']
+                order=['SNO','ID','NAME','FS_NAME','HNO','AGE','SEX','AREA']
                 fp = csv.DictWriter(myfile, order, quoting=csv.QUOTE_ALL)
                 fp.writeheader()
                 fp.writerows(voters)
@@ -929,19 +957,25 @@ def handle_arguments(parser, args):
     if args.output:
         os.makedirs(args.output, exist_ok=True)
 
+    start=time.time()
     if args.input:
         logger.info("Input file '%s' supplied, using it...", args.input)
         input_file=args.input
-        return process_input_file(input_file, args)
+        output=process_input_file(input_file, args)
+        logger.info("TOTAL EXECUTION TIME: %d secs", time.time() - start)
+        return output
 
     if input_file is None and not args.district or not args.ac:
         logger.error("Missing input file or district/AC details")
         parser.print_usage()
         sys.exit(1)
 
-    district = args.district
-    ac = args.ac
-    return download_booths_data(args, district, ac)
+    district=args.district
+    ac=args.ac
+
+    output=download_booths_data(args, district, ac)
+    logger.info("TOTAL EXECUTION TIME: %d secs", time.time() - start)
+    return output
 
 ###################################################################################################
 # Main

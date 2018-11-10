@@ -67,7 +67,7 @@ const server=http.listen(3000, function() {
 
 function sendStatus(msg) {
   logger.info(msg);
-  if (!msg.includes("Tesseract")) {
+  if (!msg.includes("Tesseract") || !msg.includes("Leptonica")) {
 	  io.emit('STATUS', msg);
   }
 }
@@ -80,6 +80,7 @@ function processFile(filename) {
 	py.stdout.on('data', function(data) {
 		sendStatus(data.toString().slice(25).replace('./uploads/','').replace('output/','').replace("INFO",""));
 	});
+	
 	py.stderr.on('data', function(data) {
 		sendStatus(data.toString().slice(25).replace('./uploads/','').replace('output/','').replace("INFO",""));
 	});
