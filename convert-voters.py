@@ -490,7 +490,7 @@ def get_id_between(line, start, end, prefix):
 
 def remove_special_chars(str):
     if str and len(str) > 0:
-        n=re.sub("\||©|=|=.|\+|\_|\$", "", str)
+        n=re.sub("\||©|=|=.|\+|\_|\$|—", "", str.strip())
         return n.strip()
     return str
 
@@ -627,26 +627,74 @@ def parse_voters_data(args, input_file):
                         if n and n != '':
                             voter.setdefault(count,{}).update(NAME=n)
                             count+=1
+                    if count < len(voter):
+                        logger.debug("Problem with matching the NAMES (found %d records for %d) for line %s, manually parsing", count, len(voter), sline)
+                        names=re.split("                               ", sline)
+                        count=0
+                        for name in names:
+                            n=name.strip()
+                            if n and n != '':
+                                logger.debug(re.split(":|;", n))
+                                try:
+                                    nn=re.split(":|;", n)
+                                    voter.setdefault(count,{}).update(NAME=nn[1].strip())
+                                except Exception:
+                                    voter.setdefault(count,{}).update(NAME=nn[0].strip())
+                                logger.debug(voter[count]["FS_NAME"])
+                                count+=1
                     continue
                 if "Husband's Name" in sline or "Father's Name" in sline or "Husband" in sline or "Father" in sline or "Mother's Name" in sline or "Mother" in sline or "Other's Name" in sline or "Others Name" in sline or "Other Name" in sline:
                     last_match='FS_NAME'
-                    names=re.split("Husband's Name[:;]|Husband Name[:;]|Husbands Name[:;]|Father's Name[:;]|Father Name[:;]|Fathers Name[:;]|Mothers Name[:;]|Mother Name[:;]|Mother's Name[:;]|Father's Name[;:]|Others Name[:;]|Other Name[:;]|Other's Name[:;]", sline)
+                    names=re.split("Husband's Name[:;]|Husband Name[:;]|Husbands Name[:;]|Father's Name[:;]|Father Name[:;]|Fathers Name[:;]|Mothers Name[:;]|Mother Name[:;]|Mother's Name[:;]|Mother’s Name[:;]|Father's Name[;:]|Others Name[:;]|Other Name[:;]|Other's Name[:;]", sline)
                     count=0
+                    logger.debug(names)
                     for name in names:
                         n=remove_special_chars(name)
                         if n and n != '':
                             voter.setdefault(count,{}).update(FS_NAME=n)
                             count+=1
+                    if count < len(voter):
+                        logger.debug("Problem with matching the FNAMES (found %d records for %d) for line %s, manually parsing", count, len(voter), sline)
+                        names=re.split("                               ", sline)
+                        count=0
+                        for name in names:
+                            n=name.strip()
+                            if n and n != '':
+                                logger.debug(re.split(":|;", n))
+                                try:
+                                    nn=re.split(":|;", n)
+                                    voter.setdefault(count,{}).update(FS_NAME=nn[1].strip())
+                                except Exception:
+                                    voter.setdefault(count,{}).update(FS_NAME=nn[0].strip())
+                                logger.debug(voter[count]["FS_NAME"])
+                                count+=1
+
                     continue
                 if "House No" in sline or "House" in sline:
                     last_match='HNO'
                     names=re.split("House No[:;]", sline)
                     count=0
+                    logger.debug(names)
                     for name in names:
                         n=name.strip()
+                        logger.debug(n)
                         if n and n != '':
                             voter.setdefault(count,{}).update(HNO=n)
                             count+=1
+                    if count < len(voter):
+                        logger.debug("Problem with matching the HNO (found %d records for %d) for line %s, manually parsing", count, len(voter), sline)
+                        names=re.split("  ", sline)
+                        count=0
+                        for name in names:
+                            n=name.strip()
+                            if n and 'House' in name:
+                                try:
+                                    nn=re.split(":|;", n)
+                                    voter.setdefault(count,{}).update(HNO=nn[1].strip())
+                                except Exception:
+                                    voter.setdefault(count,{}).update(HNO='')
+                                logger.debug(voter[count]["HNO"])
+                                count+=1
                     continue
                 if "Age" in sline and "Sex" in sline:
                     names=sline.split(" ")
@@ -657,11 +705,20 @@ def parse_voters_data(args, input_file):
                     for index, obj in enumerate(names):
                         obj=obj.strip()
                         if "Age" in obj:
-                            age=names[index+1].strip()
-                            voter.setdefault(count,{}).update(AGE=age)
+                            try:
+                                age=names[index+1].strip()
+                                voter.setdefault(count,{}).update(AGE=age)
+                            except Exception:
+                                age=''
+                                voter.setdefault(count,{}).update(AGE='')
                         elif "Sex" in obj:
-                            sex=names[index+1].strip()
-                            voter.setdefault(count,{}).update(SEX=sex)
+                            try:
+                                sex=names[index+1].strip()
+                                voter.setdefault(count,{}).update(SEX=sex)
+                            except Exception:
+                                sex=''
+                                voter.setdefault(count,{}).update(SEX=sex)
+
                         if age and sex:
                             count+=1
                             age=None
@@ -777,10 +834,14 @@ def convert_image_file_to_text(args, input_file):
     files=os.path.basename(input_file).split(".")
     tiff_file=args.output + "/" + os.path.basename(input_file).replace(files[len(files)-1],'tiff')
     logger.debug("Converting IMAGE to TEXT ...")
-    os.system("gs -dSAFER -dBATCH -dNOPAUSE -r300 -q -sDEVICE=tiffg4 -sOutputFile=" + tiff_file + ' ' + input_file)
+    command="gs -dSAFER -dBATCH -dNOPAUSE -r300 -q -sDEVICE=tiffg4 -sOutputFile='" + tiff_file + "' '" + input_file + "'"
+    logger.debug(command)
+    os.system(command)
     text_file=tiff_file.replace(".tiff", "")
     logger.info("Converting IMAGE to TEXT file (Will take few minutes depending on the size)...")
-    os.system("tesseract " + tiff_file + ' ' + text_file + " --psm 6 -l eng -c preserve_interword_spaces=1 quiet")
+    command="tesseract '" + tiff_file + "' '" + text_file + "' --psm 6 -l eng -c preserve_interword_spaces=1"
+    logger.debug(command)
+    os.system(command)
     return parse_voters_data(args, text_file + ".txt")
 
 
@@ -794,6 +855,7 @@ def process_input_file(input_file, args):
     if input_file.lower().endswith('.pdf') or input_file.lower().endswith('.png') or input_file.lower().endswith('.jpeg') or input_file.lower().endswith('.jpg'):
         logger.info("Input file is PDF/IMAGE, doing image conversion")
         return convert_image_file_to_text(args, input_file)
+    logger.error("Un-supported input file format, exiting")
 
 
 def test():
