@@ -23,7 +23,11 @@ app.route('/upload')
             file.pipe(fstream);
             fstream.on('close', function () {
 	            sendStatus("Upload done for " + filename);
-	            processFile(filename);
+	            try {
+		            processFile(filename);
+	            } catch(e) {
+		            sendStatus("ERROR" + e)
+	            }
                 res.redirect('back');
             });
         });
@@ -68,32 +72,15 @@ function sendStatus(msg) {
   }
 }
 
-let fileInProcess=false;
-let page=1;
 function processFile(filename) {
-	fileInProcess = true;
-	let interval = setInterval(function() {
-		if (!fileInProcess) {
-			clearInterval(interval);
-			return;
-		}
-		sendStatus("Page " + page + " ...");
-		page++;
-	}, 10000);
 
 	let infile="./uploads/" + filename.toLowerCase();
 	const spawn  = require('child_process').spawn, py = spawn('python3', ['./../convert-voters.py', '--input', infile]);
 
 	py.stdout.on('data', function(data) {
 		sendStatus(data.toString().slice(25).replace('./uploads/','').replace('output/','').replace("INFO",""));
-		if (data.includes("Total records: ")) {
-			fileInProcess=false;
-		}
 	});
 	py.stderr.on('data', function(data) {
 		sendStatus(data.toString().slice(25).replace('./uploads/','').replace('output/','').replace("INFO",""));
-		if (data.includes("Total records: ")) {
-			fileInProcess=false;
-		}
 	});
 }
