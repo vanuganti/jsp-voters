@@ -504,19 +504,24 @@ def parse_voters_data(args, input_file):
         logger.error(str(e))
         return
 
+    metadata={}
     voters=[]
     malformed=[]
     lno=0
     prev_line=None
     voter={}
     booth_name_matched=False
-    booth_name=None
     last_lsn=0
     last_processed_ids=None
     area_name=None
     last_area_name=None
     last_processed_lno=0
     last_match=None
+    area_names=[]
+    metadata['BOOTH']=""
+    metadata['PAGES']=2
+    metadata['ASSEMBLY']=""
+    assembly_matched=False
     try:
         for line in file:
             lno+=1
@@ -527,18 +532,114 @@ def parse_voters_data(args, input_file):
                     area_name=sline.replace("Contd...","").strip()
                     if last_area_name is None:
                         last_area_name=area_name
+                    if area_name not in area_names:
+                        area_names.append(area_name)
+                    metadata['PAGES']+=1
                     continue
 
-                if "Address of Polling Station" in sline:
-                    booth_name_matched=True
-                    last_match='BOOTH'
-                    continue
+                if metadata['PAGES'] == 2:
+                    if "Name and Reservation Status of Parliamentary" in sline:
+                        assembly_matched=False
+                        try:
+                            names=sline.split("  ")
+                            a_name=""
+                            for name in names[1:]:
+                                n=name.strip()
+                                if n and n!='':
+                                    a_name += n + " "
+                            metadata['PARLIAMENT']=a_name.replace("  ","").strip()
+                        except Exception:
+                            metadata['PARLIAMENT']=""
+                        continue
 
-                if booth_name_matched:
-                    booth_name=sline.replace('Number of Auxillary Polling','').strip()
-                    logger.info("Found booth name: %s", booth_name)
-                    booth_name_matched=False
-                    continue
+                    if "State - Andhra Pradesh" in sline:
+                        assembly_matched=True
+                        continue
+
+                    if "Name and Reservation Status of" in sline:
+                        assembly_matched=False
+                        continue
+
+                    if assembly_matched:
+                        metadata['ASSEMBLY']+=sline.strip()
+                        continue
+
+                    if "Assembly Constituency :" in sline:
+                        try:
+                            names=sline.split(":")[1].strip().split(" ")
+                            for name in names:
+                                n=name.strip()
+                                if n and n != "":
+                                    metadata['ASSEMBLY TYPE']=n
+                                    break
+                        except Exception:
+                            metadata['ASSEMBLY TYPE']=""
+                        continue
+
+                    if "in which Assembly Constituency" in sline:
+                        try:
+                            metadata['PARLIAMENT TYPE']=sline.split(":")[1].strip()
+                        except Exception:
+                            metadata['PARLIAMENT TYPE']=""
+                        continue
+
+                    if "Address of Polling Station" in sline:
+                        booth_name_matched=True
+                        continue
+
+                    if "NUMBER OF ELECTORS" in sline:
+                        booth_name_matched=False
+                        continue
+
+                    if booth_name_matched:
+                        if len(metadata['BOOTH']) >0:
+                            metadata['BOOTH']+= "\n"
+                        metadata['BOOTH']+=sline.strip()
+                        continue
+
+                    if "Main Town " in sline:
+                        try:
+                            names=re.split("Main Town [:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
+                            metadata['MAIN TOWN']=names[1].strip()
+                        except Exception:
+                            metadata['MAIN TOWN']=""
+                        continue
+
+                    if "Police Station " in sline:
+                        try:
+                            names=re.split("Police Station [:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
+                            metadata['POLICE STATION']=names[1].strip()
+                        except Exception:
+                            metadata['POLICE STATION']=""
+                        continue
+
+                    if "Mandal " in sline:
+                        try:
+                            names=re.split("Mandal [:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
+                            metadata['MANDAL']=names[1].strip()
+                        except Exception:
+                            metadata['MANDAL']=""
+                        continue
+
+                    if "District " in sline:
+                        try:
+                            names=re.split("District [:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
+                            metadata['DISTRICT']=names[1].strip()
+                        except Exception:
+                            metadata['DISTRICT']=""
+                        continue
+
+                    if "Pin Code " in sline:
+                        try:
+                            names=re.split("Pin Code ?[:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
+                            if len(names) > 1 and names[1] and names[1] != '':
+                                metadata['PINCODE']=names[1].strip()
+                            else:
+                                names=re.split("Pin Code ", re.sub(' +',' ',sline).strip())
+                                metadata['PINCODE']=names[1].strip()
+                        except Exception:
+                            metadata['PINCODE']=""
+                        continue
 
                 if "Elector's Name" in sline or "Elector Name" in sline or "Electors Name" in sline or "Elector’s Name" in sline:
                     if len(voter) > 0:
@@ -765,6 +866,7 @@ def parse_voters_data(args, input_file):
                 data.update({"AREA": last_area_name})
                 voters.append(data)
 
+        metadata['BOOTH']=re.sub("Number of Auxillary Polling|Stations in this Part:|  ","",metadata['BOOTH'].replace("\n",",").strip()).strip()
         logger.info("---------------- S U M M A R Y ----------------------")
         if len(voters) > 0:
             outfile=os.path.basename(input_file).split(".")[0] + ".csv" if input_file else "output.csv"
@@ -777,10 +879,11 @@ def parse_voters_data(args, input_file):
                 fp.writerows(voters)
             logger.debug("Output is saved in %s file", outfile)
 
-        logger.info("Total records: %d, malformed: %d", len(voters), len(malformed))
+        logger.info("Total records: %d, malformed: %d, areas: %d, pages: %d", len(voters), len(malformed), len(area_names), metadata['PAGES'])
         logger.debug("Malformed records:")
         for x in malformed:
             logger.debug("  {}".format(x))
+        logger.info("{}".format(metadata))
         logger.debug("-----------------------------------------------------")
 
     except Exception as e:
