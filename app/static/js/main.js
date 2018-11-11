@@ -8,10 +8,16 @@ function init_handler() {
 		$("#main-status").animate({
 			scrollTop: $("#main-status").height() + 100
 		}, 300);
-		if (msg.includes("Total records: ")) {
+		if (msg.includes("CONVERSION DONE")) {
 			$("#download").removeAttr('disabled');
 			li = document.createElement("li");
-			li.appendChild(document.createTextNode("Please download the converted CSV file..."));
+			let a = document.createElement('a');
+			let linkText = document.createTextNode("Please download the converted XLS file");
+			a.appendChild(linkText);
+			a.title = "Please download the converted XLS file";
+			a.href = "javascript: download_file();";
+			document.body.appendChild(a);
+			li.appendChild(a);
 			document.getElementById("status").appendChild(li)
 		}
 	});
