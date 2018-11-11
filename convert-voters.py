@@ -756,6 +756,7 @@ def parse_voters_data(args, input_file):
                                     voter.setdefault(count,{}).update(NAME=nn[1].strip())
                                 except Exception:
                                     voter.setdefault(count,{}).update(NAME=nn[0].strip())
+                                    pass
                                 logger.debug(voter[count]["FS_NAME"])
                                 count+=1
                     continue
@@ -782,6 +783,7 @@ def parse_voters_data(args, input_file):
                                     voter.setdefault(count,{}).update(FS_NAME=nn[1].strip())
                                 except Exception:
                                     voter.setdefault(count,{}).update(FS_NAME=nn[0].strip())
+                                    pass
                                 logger.debug(voter[count]["FS_NAME"])
                                 count+=1
 
@@ -809,6 +811,7 @@ def parse_voters_data(args, input_file):
                                     voter.setdefault(count,{}).update(HNO=nn[1].strip())
                                 except Exception:
                                     voter.setdefault(count,{}).update(HNO='')
+                                    pass
                                 logger.debug(voter[count]["HNO"])
                                 count+=1
                     continue
@@ -830,10 +833,12 @@ def parse_voters_data(args, input_file):
                                     if age and age != '':
                                         break
                                     c+=1
+                                age=re.sub("[^0-9]", "", age)
                                 voter.setdefault(count,{}).update(AGE=int(age))
                             except Exception:
                                 age=''
                                 voter.setdefault(count,{}).update(AGE=0)
+                                pass
                         elif "Sex" in obj:
                             try:
                                 c=index+1
@@ -847,6 +852,7 @@ def parse_voters_data(args, input_file):
                             except Exception:
                                 sex=''
                                 voter.setdefault(count,{}).update(SEX=sex)
+                                pass
                         if age and sex:
                             logger.debug(voter[count])
                             count+=1
