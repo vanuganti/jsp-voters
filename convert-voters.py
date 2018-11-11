@@ -18,7 +18,8 @@ import pytesseract
 import asyncio
 from proxybroker import Broker
 import pandas as pd
-
+import hashlib
+import redis
 
 try:
     from PIL import Image, ImageEnhance, ImageFilter
@@ -35,6 +36,7 @@ TOTAL_COUNT=0
 FAILED_KEYWORDS=[]
 killThreads=False
 CSVLOCK=threading.Lock()
+REDIS=None
 
 ###################################################################################################
 # Option handling
@@ -49,6 +51,7 @@ def init_options():
     parser.add_argument('--threads', dest='threads', type=int, action='store', default=1, help='Max threads (default 1)')
     parser.add_argument('--dry-run', dest='dryrun', action='store_true', help='Dry run to test')
     parser.add_argument('--skip-proxy', dest='skipproxy', action='store_true', help='Skip proxy to be used for requests')
+    parser.add_argument('--skip-lookup-db', dest='skip_lookup_db', action='store_true', help='Skip using lookup DB for existing files')
     parser.add_argument('--limit', dest='limit', type=int, action='store', default=0, help='Limit total booths (default all booths)')
     parser.add_argument('--stdout', dest='stdout', action='store_true', help='Write output to stdout instead of CSV file')
     parser.add_argument('--input', dest='input', type=str, action='store', default=None, help='Use the input file specified instead of downloading')
@@ -985,6 +988,34 @@ def download_booths_data(args, district, ac):
         logger.error(str(e))
         traceback.print_exc(file=sys.stdout)
 
+def get_md5(filename):
+    try:
+        hash_md5 = hashlib.md5()
+        with open(filename, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_md5.update(chunk)
+        md5=hash_md5.hexdigest()
+        logger.info("MD5 for {}: {}".format(filename, md5))
+        return md5
+    except Exception as e:
+        logger.error("MD5 failed for file %s", filename)
+        logger.error(e)
+    return None
+
+def get_key(key):
+    global REDIS
+    if REDIS:
+        val=REDIS.get("VOTER-"+key)
+        if val:
+            return val.decode()
+    return None
+
+def set_key(key, value):
+    global REDIS
+    if REDIS:
+        return REDIS.set("VOTER-"+key, value)
+    return None
+
 #
 # convert image to text
 #
@@ -992,6 +1023,13 @@ def convert_image_file_to_text(args, input_file):
     if not os.path.isfile(input_file):
         logger.error("Input file " + input_file + " does not exists, exiting...")
         sys.exit(1)
+
+    md5=get_md5(input_file)
+    if md5 and not args.skip_lookup_db:
+        text_file=get_key(md5)
+        if text_file:
+            logger.info("File checksum matches, skiping the conversion and using the existing file")
+            return parse_voters_data(args, text_file)
 
     files=os.path.basename(input_file).split(".")
     tiff_file=args.output + "/" + os.path.basename(input_file).replace(files[len(files)-1],'tiff')
@@ -1004,6 +1042,7 @@ def convert_image_file_to_text(args, input_file):
     command="tesseract '" + tiff_file + "' '" + text_file + "' --psm 6 -l eng -c preserve_interword_spaces=1"
     logger.debug(command)
     os.system(command)
+    set_key(md5, text_file + ".txt")
     return parse_voters_data(args, text_file + ".txt")
 
 
@@ -1111,6 +1150,14 @@ def handle_arguments(parser, args):
 if __name__ == "__main__":
     parser, args = init_options()
     logger.setLevel(logging.DEBUG) if args.debug else logger.setLevel(logging.INFO)
+    if not args.skip_lookup_db:
+        try:
+            REDIS=redis.Redis(host='localhost')
+            logger.info("Connected to Redis version %s", REDIS.execute_command('INFO')['redis_version'])
+        except Exception as e:
+            logger.error("Failed to connect to Redis, skipping the MD5 lookups")
+            logger.error(str(e))
+            REDIS=None
     #test()
     handle_arguments(parser, args)
 
