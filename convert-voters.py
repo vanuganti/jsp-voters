@@ -492,7 +492,7 @@ def get_id_between(line, start, end, prefix):
 
 def remove_special_chars(str):
     if str and len(str) > 0:
-        n=re.sub("\||©|=|=.|\+|\_|\$|—", "", str.strip())
+        n=re.sub("\||©|=|=.|\+|\_|\$|—|»", "", str.strip())
         return n.strip()
     return str
 
@@ -605,7 +605,7 @@ def parse_voters_data(args, input_file):
                     if "Main Town " in sline:
                         try:
                             names=re.split("Main Town [:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
-                            metadata['MAIN TOWN']=names[1].strip()
+                            metadata['MAIN TOWN']=remove_special_chars(names[1].strip())
                         except Exception:
                             metadata['MAIN TOWN']=""
                         continue
@@ -613,7 +613,7 @@ def parse_voters_data(args, input_file):
                     if "Police Station " in sline:
                         try:
                             names=re.split("Police Station [:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
-                            metadata['POLICE STATION']=names[1].strip()
+                            metadata['POLICE STATION']=remove_special_chars(names[1].strip())
                         except Exception:
                             metadata['POLICE STATION']=""
                         continue
@@ -621,7 +621,7 @@ def parse_voters_data(args, input_file):
                     if "Mandal " in sline:
                         try:
                             names=re.split("Mandal [:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
-                            metadata['MANDAL']=names[1].strip()
+                            metadata['MANDAL']=remove_special_chars(names[1].strip())
                         except Exception:
                             metadata['MANDAL']=""
                         continue
@@ -629,7 +629,7 @@ def parse_voters_data(args, input_file):
                     if "District " in sline:
                         try:
                             names=re.split("District [:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
-                            metadata['DISTRICT']=names[1].strip()
+                            metadata['DISTRICT']=remove_special_chars(names[1].strip())
                         except Exception:
                             metadata['DISTRICT']=""
                         continue
@@ -641,7 +641,7 @@ def parse_voters_data(args, input_file):
                                 metadata['PINCODE']=names[1].strip()
                             else:
                                 names=re.split("Pin Code ", re.sub(' +',' ',sline).strip())
-                                metadata['PINCODE']=names[1].strip()
+                                metadata['PINCODE']=remove_special_chars(names[1].strip())
                         except Exception:
                             metadata['PINCODE']=""
                         continue
