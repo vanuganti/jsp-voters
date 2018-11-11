@@ -56,7 +56,8 @@ app.get('/download/:file(*)',(req, res) => {
 });
 
 io.on('connection', function(socket){
-	logger.info('A new WebSocket connection has been established');
+	let address=socket.request && socket.request.connection ? socket.request.connection.remoteAddress : "UNKNOWN";
+	logger.info('A new WebSocket connection has been established from %s', address);
 });
 
 const server=http.listen(3000, function() {
