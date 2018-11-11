@@ -915,7 +915,7 @@ def parse_voters_data(args, input_file):
 
         logger.info("---------------- S U M M A R Y ----------------------")
         logger.info("Total records: %d, malformed: %d, areas: %d, pages: %d", len(voters), len(malformed), len(area_names), metadata['PAGES'])
-        logger.debug("{}".format(metadata))
+        logger.info("{}".format(metadata))
         logger.info("CONVERSION DONE")
 
     except Exception as e:
