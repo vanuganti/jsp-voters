@@ -832,7 +832,6 @@ def parse_voters_data(args, input_file):
                                     c+=1
                                 voter.setdefault(count,{}).update(AGE=int(age))
                             except Exception:
-                                logger.error("Exception age")
                                 age=''
                                 voter.setdefault(count,{}).update(AGE=0)
                         elif "Sex" in obj:
@@ -846,7 +845,6 @@ def parse_voters_data(args, input_file):
                                     c+=1
                                 voter.setdefault(count,{}).update(SEX=sex)
                             except Exception:
-                                logger.error("Exception sex")
                                 sex=''
                                 voter.setdefault(count,{}).update(SEX=sex)
                         if age and sex:
