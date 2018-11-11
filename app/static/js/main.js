@@ -45,7 +45,7 @@ function upload_file() {
 function download_file() {
 	let files = document.getElementById("fileUploaded").files;
 	console.log(files[0].name);
-	let fileName = files[0].name.replace(/.pdf|.png|.jpeg|.txt|.csv/gi, ".csv");
+	let fileName = files[0].name.replace(/.pdf|.png|.jpeg|.txt|.csv|.xlsx/gi, ".xlsx");
 	$.ajax({
 		url: '/download/' + fileName,
 		type: 'GET',

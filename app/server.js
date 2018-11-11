@@ -34,7 +34,7 @@ app.route('/upload')
     });
 
 app.get('/download/:file(*)',(req, res) => {
-	let outfile = req.params.file.replace(/.pdf|.png|.jpeg|.txt|.csv/gi, ".csv");
+	let outfile = req.params.file.replace(/.pdf|.png|.jpeg|.txt|.csv|.xlsx/gi, ".xlsx");
 	let fileLocation = path.join('./output/', outfile);
 	fs.exists(fileLocation, function(exists) {
 		if (exists) {
@@ -49,8 +49,8 @@ app.get('/download/:file(*)',(req, res) => {
 			sendStatus("File " + outfile + " Downloaded")
 		} else {
 			res.writeHead(400, {"Content-Type": "text/plain"});
-			res.end("ERROR File does not exist");
-			sendStatus("File doesn't exists " + outfile);
+			res.end("ERROR File does not exist for download");
+			sendStatus("File doesn't exists for download" + outfile);
 		}
 	});
 });
@@ -67,20 +67,21 @@ const server=http.listen(3000, function() {
 
 function sendStatus(msg) {
   logger.info(msg);
-  if (!msg.includes("Tesseract") || !msg.includes("Leptonica")) {
-	  io.emit('STATUS', msg);
-  }
+	if (msg.includes("Tesseract") || msg.includes("Leptonica")) {
+		return
+	}
+	io.emit('STATUS', msg);
 }
 
 function processFile(filename) {
 
 	let infile="./uploads/" + filename.toLowerCase();
-	const spawn  = require('child_process').spawn, py = spawn('python3', ['./../convert-voters.py', '--input', infile]);
+	const spawn  = require('child_process').spawn, py = spawn('python3', ['./../convert-voters.py', '--input', infile,'--xls']);
 
 	py.stdout.on('data', function(data) {
 		sendStatus(data.toString().slice(25).replace('./uploads/','').replace('output/','').replace("INFO",""));
 	});
-	
+
 	py.stderr.on('data', function(data) {
 		sendStatus(data.toString().slice(25).replace('./uploads/','').replace('output/','').replace("INFO",""));
 	});

@@ -17,6 +17,9 @@ import threading
 import pytesseract
 import asyncio
 from proxybroker import Broker
+import pandas as pd
+
+
 try:
     from PIL import Image, ImageEnhance, ImageFilter
 except ImportError:
@@ -49,6 +52,8 @@ def init_options():
     parser.add_argument('--limit', dest='limit', type=int, action='store', default=0, help='Limit total booths (default all booths)')
     parser.add_argument('--stdout', dest='stdout', action='store_true', help='Write output to stdout instead of CSV file')
     parser.add_argument('--input', dest='input', type=str, action='store', default=None, help='Use the input file specified instead of downloading')
+    parser.add_argument('--csv', dest='csv', action='store_true', default=False, help='Create CSV file, default False')
+    parser.add_argument('--xls', dest='xls', action='store_true', default=False, help='Create XLS file, default False')
     parser.add_argument('--output', dest='output', type=str, action='store', default='output', help='Output folder to store extracted files (default "output")')
     parser.add_argument('--s3', dest='s3', type=str, action='store', default=None, help='s3 bucket name to store final csv file')
     return parser, parser.parse_args()
@@ -497,7 +502,7 @@ def parse_voters_data(args, input_file):
         return
 
     try:
-        logger.info("Converting INPUT TEXT FILE %s into CSV file", input_file)
+        logger.info("Converting INPUT TEXT FILE %s ", input_file)
         file=open(input_file, "r")
     except IOError as e:
         logger.error("Failed to OPEN INPUT FILE %s", input_file)
@@ -685,7 +690,7 @@ def parse_voters_data(args, input_file):
                                         found_sno=last_lsn+count+1
                                 if found_sno and found_id:
                                     logger.debug("Assing ids: {}:{}".format(found_sno, found_id))
-                                    voter.setdefault(count,{}).update(SNO=found_sno)
+                                    voter.setdefault(count,{}).update(SNO=int(found_sno))
                                     voter.setdefault(count,{}).update(ID=found_id)
                                     count+=1
                                     found_sno=None
@@ -696,7 +701,7 @@ def parse_voters_data(args, input_file):
                             logger.debug("IDs length mismatch {}, {}".format(len(ids), ids))
                             for i in range(1,4):
                                 id=get_id_between(prev_line, last_lsn+i, last_lsn+i+1, "" if i == 1 else " ")
-                                voter.setdefault(i-1,{}).update(SNO=id[0])
+                                voter.setdefault(i-1,{}).update(SNO=int(id[0]))
                                 voter.setdefault(i-1,{}).update(ID=id[1])
                                 if id[2] is True:
                                    logger.warning("Malformed record found for sequence {} at line {} ({})".format(last_lsn+i, lno, prev_line))
@@ -721,7 +726,7 @@ def parse_voters_data(args, input_file):
                                         continue
                                     if iname:
                                         id=str(iname+""+id)
-                                    voter.setdefault(count,{}).update(SNO=sno)
+                                    voter.setdefault(count,{}).update(SNO=int(sno))
                                     voter.setdefault(count,{}).update(ID=id)
                                     sno=None
                                     iname=None
@@ -822,11 +827,11 @@ def parse_voters_data(args, input_file):
                                     if age and age != '':
                                         break
                                     c+=1
-                                voter.setdefault(count,{}).update(AGE=age)
+                                voter.setdefault(count,{}).update(AGE=int(age))
                             except Exception:
                                 logger.error("Exception age")
                                 age=''
-                                voter.setdefault(count,{}).update(AGE='')
+                                voter.setdefault(count,{}).update(AGE=0)
                         elif "Sex" in obj:
                             try:
                                 c=index+1
@@ -866,30 +871,56 @@ def parse_voters_data(args, input_file):
                 data.update({"AREA": last_area_name})
                 voters.append(data)
 
-        metadata['BOOTH']=re.sub("Number of Auxillary Polling|Stations in this Part:|  ","",metadata['BOOTH'].replace("\n",",").strip()).strip()
-        logger.info("---------------- S U M M A R Y ----------------------")
-        if len(voters) > 0:
-            outfile=os.path.basename(input_file).split(".")[0] + ".csv" if input_file else "output.csv"
-            if args.output:
-                outfile=args.output + "/" + outfile
-            with open(outfile, 'w') as myfile:
-                order=['SNO','ID','NAME','FS_NAME','HNO','AGE','SEX','AREA']
-                fp = csv.DictWriter(myfile, order, quoting=csv.QUOTE_ALL)
-                fp.writeheader()
-                fp.writerows(voters)
-            logger.debug("Output is saved in %s file", outfile)
-
-        logger.info("Total records: %d, malformed: %d, areas: %d, pages: %d", len(voters), len(malformed), len(area_names), metadata['PAGES'])
         logger.debug("Malformed records:")
         for x in malformed:
             logger.debug("  {}".format(x))
+
+        metadata['BOOTH']=re.sub("Number of Auxillary Polling|Stations in this Part:|  ","",metadata['BOOTH'].replace("\n",",").strip()).strip()
+        if len(voters) > 0:
+            try:
+                col_order=['SNO','ID','NAME','FS_NAME','HNO','AGE','SEX','AREA']
+                data_frame=pd.DataFrame(voters, columns=col_order)
+                if args.csv:
+                    outfile=os.path.basename(input_file).split(".")[0] + ".csv" if input_file else "output.csv"
+                    if args.output:
+                        outfile=args.output + "/" + outfile
+                    data_frame.to_csv(outfile, index=False)
+                    logger.debug("CSV Output is saved in %s file", outfile)
+
+                if args.xls:
+                    outfile=os.path.basename(input_file).split(".")[0] + ".xlsx" if input_file else "output.xlsx"
+                    if args.output:
+                        outfile=args.output + "/" + outfile
+
+                    writer = pd.ExcelWriter(outfile, engine='xlsxwriter')
+                    for key,value in data_frame['SEX'].value_counts().iteritems():
+                        metadata[key.upper()]=value
+                    metadata['TOTAL']=len(voters)
+                    details=pd.DataFrame(metadata, index=[0]).T
+                    details.to_excel(writer, 'DETAILS')
+                    data_frame.to_excel(writer, 'VOTERS DATA', index=False)
+                    writer.save()
+                    logger.debug("XLS Output is saved in %s file", outfile)
+
+                if not args.csv and not args.xls:
+                    logger.info("No output file supplied, printing to STDOUT")
+                    print("\nOUTPUT RECORDS: \n\n")
+                    for voter in voters:
+                        print(voter)
+                    print("\n\n")
+            except Exception as e:
+                logger.error("Exception when writing output")
+                logger.error(e, exc_info=True)
+
+        logger.info("---------------- S U M M A R Y ----------------------")
+        logger.info("Total records: %d, malformed: %d, areas: %d, pages: %d", len(voters), len(malformed), len(area_names), metadata['PAGES'])
         logger.info("{}".format(metadata))
         logger.debug("-----------------------------------------------------")
 
     except Exception as e:
         logger.error("Exception in the line '{}': {}".format(lno, sline))
         logger.error(voter)
-        traceback.print_exc(file=sys.stdout)
+        logger.error(e, exc_info=True)
 
 
 #
@@ -1060,13 +1091,10 @@ def handle_arguments(parser, args):
     if args.output:
         os.makedirs(args.output, exist_ok=True)
 
-    start=time.time()
     if args.input:
         logger.info("Input file '%s' supplied, using it...", args.input)
         input_file=args.input
-        output=process_input_file(input_file, args)
-        logger.info("TOTAL EXECUTION TIME: %d secs", time.time() - start)
-        return output
+        return process_input_file(input_file, args)
 
     if input_file is None and not args.district or not args.ac:
         logger.error("Missing input file or district/AC details")
@@ -1075,10 +1103,7 @@ def handle_arguments(parser, args):
 
     district=args.district
     ac=args.ac
-
-    output=download_booths_data(args, district, ac)
-    logger.info("TOTAL EXECUTION TIME: %d secs", time.time() - start)
-    return output
+    return download_booths_data(args, district, ac)
 
 ###################################################################################################
 # Main
