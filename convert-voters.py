@@ -20,6 +20,8 @@ from proxybroker import Broker
 import pandas as pd
 import hashlib
 import redis
+from io import BytesIO
+
 
 try:
     from PIL import Image, ImageEnhance, ImageFilter
@@ -33,7 +35,7 @@ logger.setLevel(logging.DEBUG)
 
 LOGIN_URL="http://ceoaperms.ap.gov.in/Electoral_Rolls/Rolls.aspx"
 TOTAL_COUNT=0
-FAILED_KEYWORDS=[]
+FAILED_BOOTHS=[]
 killThreads=False
 CSVLOCK=threading.Lock()
 REDIS=None
@@ -109,8 +111,43 @@ class ProxyList:
 # captcha extract from image using teserract
 #
 class ImageToText:
-    def __init__(self, image):
+    def __init__(self, session, url, image):
         self.image = image
+        self.session = session
+        self.url = url
+
+        if self.session and url:
+            self.session.headers.update({'referer': self.url})
+
+
+    #
+    # process using using tesseract to get string
+    #
+    def __image_to_text(self):
+        try:
+            response = self.session.get("http://ceoaperms.ap.gov.in/Electoral_Rolls/Captcha.aspx", stream=True)
+            if response.status_code != 200:
+                logger.error(response)
+                return None
+
+            captcha_image = BytesIO()
+            for chunk in response:
+                captcha_image.write(chunk)
+
+            img = Image.open(captcha_image)
+            with BytesIO() as f:
+                img.save(f, format="png", quality=300)
+                img_png=Image.open(f)
+                return pytesseract.image_to_string(img_png, lang='eng', config='-c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 --psm 6', nice=0)
+
+        except KeyboardInterrupt:
+            global killThreads
+            logger.error("Keyboard interrupt received, killing it")
+            killThreads = True
+            return None
+        except Exception as e:
+            logger.error("Failed to parse captcha, " + str(e))
+            return None
 
     #
     # get valid captcha from the image until valid STRING found
@@ -122,30 +159,6 @@ class ImageToText:
                 return None
             if len(image_text) == 6 and re.match('^[\w-]+$', image_text) is not None:
                 return image_text
-
-    #
-    # process using using tesseract to get string
-    #
-    def __image_to_text(self):
-        try:
-            response = requests.get("http://ceoaperms.ap.gov.in/Electoral_Rolls/Captcha.aspx")
-            name=self.image.replace(".pdf", ".gif")
-            f = open(name, 'wb')
-            f.write(response.content)
-            print("3----------------------------------")
-            img = Image.open(response.content)
-            #img = Image.open(response.content)
-            #img = img.convert(quality=100, density=300)
-            print("4----------------------------------")
-            return pytesseract.image_to_string(img, lang='eng', config='-c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 --psm 6', nice=0)
-        except KeyboardInterrupt:
-            global killThreads
-            logger.error("Keyboard interrupt received, killing it")
-            killThreads = True
-            return None
-        except Exception as e:
-            logger.error("Failed to parse captcha, " + str(e))
-            return None
 
     #
     # public method
@@ -261,7 +274,7 @@ class BoothsDataDownloader:
 
             url=None
             if not args.skipproxy:
-                logger.info("[%d_%d] Start downloading [%s]", self.district, self.ac, self.proxy['http'] if len(self.proxy) > 0 else "")
+                logger.info("[%d_%d] Start downloading booth data [%s]", self.district, self.ac, self.proxy['http'] if len(self.proxy) > 0 else "")
                 for i in range(len(PROXY_LIST)):
                     url = self.__validate_proxy_get_request(self.proxy)
                     if url or len(self.proxy) == 0 or len(PROXY_LIST) == 0:
@@ -408,10 +421,11 @@ class BoothsDataDownloader:
 
 
     def __download_voters_by_booth_id(self, id):
-        logger.info("[%d_%d_%d] Processing booth %d", self.district, self.ac, id, id)
-        url="http://ceoaperms.ap.gov.in/Electoral_Rolls/Popuppage.aspx?partNumber=1&roll=EnglishMotherRoll&districtName=DIST_" + str(self.district).zfill(2) + "&acname=AC_" + str(self.ac).zfill(3) + "&acnameeng=A" + str(self.ac).zfill(3) + "&acno=" + str(id) + "&acnameurdu=" + str(id)
+        logger.debug("[%d_%d_%d] Processing booth %d", self.district, self.ac, id, id)
+        url="http://ceoaperms.ap.gov.in/Electoral_Rolls/Popuppage.aspx?partNumber="+str(id)+"&roll=EnglishMotherRoll&districtName=DIST_" + str(self.district).zfill(2) + "&acname=AC_" + str(self.ac).zfill(3) + "&acnameeng=A" + str(self.ac).zfill(3) + "&acno=" + str(self.ac) + "&acnameurdu=" + str(self.ac)
         retryCount=0
-        outfile=self.args.output + "/" + str(self.district) + "_" + str(self.ac) + "/" + str(self.district) + "_" + str(self.ac) + "_" + str(id) + "_1.pdf"
+        outfile=self.args.output + "/" + str(self.district) + "_" + str(self.ac) + "/" + str(self.district) + "_" + str(self.ac) + "_" + str(id) + ".pdf"
+        os.makedirs(os.path.dirname(outfile), exist_ok=True)
 
         global killThreads
         try:
@@ -422,12 +436,14 @@ class BoothsDataDownloader:
                 session = requests.Session()
                 session.headers.update({'User-Agent': choice(DESKTOP_AGENTS),'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'})
 
+                if retryCount > 0:
+                    logger.debug("Retrying the download %d", retryCount)
+
                 retryCount+=1
-                logger.debug("Retrying the download %d", retryCount)
                 result = session.post(url, proxies=self.proxy, timeout=60)
                 if not result:
                     logger.error("[%d_%d_%d] Failed to post for booth data, empty results", self.district,self.ac, id)
-                    FAILED_KEYWORDS.append(id) if id not in FAILED_KEYWORDS else {}
+                    FAILED_BOOTHS.append(id) if id not in FAILED_BOOTHS else {}
                     return None
                 if result and result.status_code != 200:
                     logger.error("[%d_%d_%d] Failed to post request, code %d", self.district,self.ac, id, result.status_code)
@@ -435,13 +451,7 @@ class BoothsDataDownloader:
                     continue
 
                 soup = BeautifulSoup(result.text, "lxml")
-                imgs = soup.findAll('img')  # Perform login
-
-                captcha_text = None
-                for img in imgs:
-                    if 'Captcha' in img['src']:
-                        captcha_text = ImageToText(outfile).get()
-                        logger.info("[%d_%d] Captcha text: %s", self.district, self.ac, captcha_text)
+                captcha_text = ImageToText(session, url, outfile).get()
 
                 inputs = soup.findAll('input')
                 view_state = ''
@@ -463,20 +473,24 @@ class BoothsDataDownloader:
                 results = session.post(url, data=formData, proxies=self.proxy, timeout=240, stream=True)
                 if not results:
                     logger.error("[%d_%d_%d] Failed to post, empty results with proxy %s", self.district, self.ac, id, self.proxy)
-                    FAILED_KEYWORDS.append(id) if id not in FAILED_KEYWORDS else {}
+                    FAILED_BOOTHS.append(id) if id not in FAILED_BOOTHS else {}
                     return None
                 if results and results.status_code != 200:
                     logger.error("[%d_%d_%d] Failed to post request, code %d", self.district, self.ac, id, results.status_code)
                     logger.error(results.reason)
                     continue
+                if result.status_code == 200:
+                    if "Please enter correct captcha" in result.text:
+                        retryCount+=1
+                        logger.debug("[%s] Captcha failed. retrying %d...", self.keyword, retryCount)
+                        continue
 
-                with open(outfile, 'wb') as myfile:
-                    #for block in results.iter_content(chunk_size=1024):
-                    myfile.write(results.content)
-                    logger.info("[%d_%d_%d] Successfully downloaded the file", self.district, self.ac, id )
+                    with open(outfile, 'wb') as myfile:
+                        myfile.write(results.content)
+                        logger.info("[%d_%d_%d] Successfully downloaded the file %s", self.district, self.ac, id, outfile)
                 return results
         except Exception as e:
-            logger.error("[%d_%d] Failed to process both voters data for booth ID %d", self.district, self.ac, id)
+            logger.error("[%d_%d] Failed to process booth voters data for booth ID %d", self.district, self.ac, id)
             logger.error(str(e))
 
 
@@ -971,19 +985,31 @@ def download_booths_data(args, district, ac):
             logger.info("Download the booth data for district %d, ac: %d", district, ac)
             booth_output_dir=args.output + "/" + str(district) + "_" + str(ac)
             os.makedirs(booth_output_dir, exist_ok=True)
-            booth_data=BoothsDataDownloader(args, district, ac).download()
+            data=BoothsDataDownloader(args, district, ac).download()
+            booth_data=range(1, len(data) + 1)
 
         logger.info("Launching %d threads to process %d booths", args.threads, len(booth_data))
 
+        count=0
         with ThreadPoolExecutor(max_workers=args.threads) as executor:
-            for id in range(0, len(booth_data)):
-                logger.info("Thread %d", id)
-                if args.limit > 0 and id >= args.limit:
+            for id in booth_data:
+                if args.limit > 0 and count >= args.limit:
                     logger.info("[%d_%d] LIMIT %d reached, exiting...", district, ac, args.limit)
                     break
                 if killThreads:
                     break
-                executor.submit(BoothsDataDownloader, args, district, ac, id+1)
+                executor.submit(BoothsDataDownloader, args, district, ac, int(id))
+                count+=1
+
+        for i in range(5):
+            if len(FAILED_BOOTHS) <= 0 or killThreads or args.limit > 0 and count >= args.limit:
+                break
+            logger.info("========= PROCESSING FAILED BOOTHS (%d) =============", len(FAILED_BOOTHS))
+            with ThreadPoolExecutor(max_workers=args.threads) as executor:
+                for id in FAILED_BOOTHS:
+                    if killThreads:
+                        break
+                    executor.submit(BoothsDataDownloader, args, district, ac, int(id))
 
     except KeyboardInterrupt:
         logger.error("Keyboard interrupt received, killing it")
