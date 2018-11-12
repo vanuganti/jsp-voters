@@ -33,7 +33,7 @@ logging.basicConfig(level=logging.ERROR, format='%(asctime)s %(lineno)-4d %(leve
 logger = logging.getLogger("convert-voters")
 logger.setLevel(logging.DEBUG)
 
-LOGIN_URL="http://ceoaperms.ap.gov.in/Electoral_Rolls/Rolls.aspx"
+LOGIN_URL="http://ceoaperms1.ap.gov.in/Electoral_Rolls/Rolls.aspx"
 TOTAL_COUNT=0
 FAILED_BOOTHS=[]
 killThreads=False
@@ -125,7 +125,7 @@ class ImageToText:
     #
     def __image_to_text(self):
         try:
-            response = self.session.get("http://ceoaperms.ap.gov.in/Electoral_Rolls/Captcha.aspx", stream=True)
+            response = self.session.get("http://ceoaperms1.ap.gov.in/Electoral_Rolls/Captcha.aspx", stream=True)
             if response.status_code != 200:
                 logger.error(response)
                 return None
@@ -422,7 +422,7 @@ class BoothsDataDownloader:
 
     def __download_voters_by_booth_id(self, id):
         logger.debug("[%d_%d_%d] Processing booth %d", self.district, self.ac, id, id)
-        url="http://ceoaperms.ap.gov.in/Electoral_Rolls/Popuppage.aspx?partNumber="+str(id)+"&roll=EnglishMotherRoll&districtName=DIST_" + str(self.district).zfill(2) + "&acname=AC_" + str(self.ac).zfill(3) + "&acnameeng=A" + str(self.ac).zfill(3) + "&acno=" + str(self.ac) + "&acnameurdu=" + str(self.ac)
+        url="http://ceoaperms1.ap.gov.in/Electoral_Rolls/Popuppage.aspx?partNumber="+str(id)+"&roll=EnglishMotherRoll&districtName=DIST_" + str(self.district).zfill(2) + "&acname=AC_" + str(self.ac).zfill(3) + "&acnameeng=A" + str(self.ac).zfill(3) + "&acno=" + str(self.ac) + "&acnameurdu=" + str(self.ac)
         retryCount=0
         outfile=self.args.output + "/" + str(self.district) + "_" + str(self.ac) + "/" + str(self.district) + "_" + str(self.ac) + "_" + str(id) + ".pdf"
         os.makedirs(os.path.dirname(outfile), exist_ok=True)
@@ -961,7 +961,7 @@ def download_booths_data(args, district, ac):
             for proxy in proxy_list:
                 try:
                     p = {'http': proxy}
-                    result= requests.post("http://ceoaperms.ap.gov.in/Electoral_Rolls/Rolls.aspx", proxies=p, timeout=15)
+                    result= requests.post("http://ceoaperms1.ap.gov.in/Electoral_Rolls/Rolls.aspx", proxies=p, timeout=15)
                     if result.status_code == 200:
                         continue
                     proxy_list.remove(proxy)
