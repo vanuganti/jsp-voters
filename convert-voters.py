@@ -33,7 +33,7 @@ logging.basicConfig(level=logging.ERROR, format='%(asctime)s %(lineno)-4d %(leve
 logger = logging.getLogger("convert-voters")
 logger.setLevel(logging.DEBUG)
 
-LOGIN_URL="http://ceoaperms1.ap.gov.in/Electoral_Rolls/Rolls.aspx"
+LOGIN_URL="http://ceoaperms.ap.gov.in/Electoral_Rolls/Rolls.aspx"
 TOTAL_COUNT=0
 FAILED_BOOTHS=[]
 killThreads=False
@@ -125,7 +125,7 @@ class ImageToText:
     #
     def __image_to_text(self):
         try:
-            response = self.session.get("http://ceoaperms1.ap.gov.in/Electoral_Rolls/Captcha.aspx", stream=True)
+            response = self.session.get("http://ceoaperms.ap.gov.in/Electoral_Rolls/Captcha.aspx", stream=True)
             if response.status_code != 200:
                 logger.error(response)
                 return None
@@ -136,7 +136,7 @@ class ImageToText:
 
             img = Image.open(captcha_image)
             with BytesIO() as f:
-                img.save(f, format="png", quality=300)
+                img.save(f, format="png", quality=600)
                 img_png=Image.open(f)
                 return pytesseract.image_to_string(img_png, lang='eng', config='-c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 --psm 6', nice=0)
 
@@ -155,6 +155,7 @@ class ImageToText:
     def __get_text_from_image(self):
         for i in range(25):
             image_text = self.__image_to_text()
+            logger.debug(image_text)
             if image_text is None:
                 return None
             if len(image_text) == 6 and re.match('^[\w-]+$', image_text) is not None:
@@ -422,7 +423,7 @@ class BoothsDataDownloader:
 
     def __download_voters_by_booth_id(self, id):
         logger.debug("[%d_%d_%d] Processing booth %d", self.district, self.ac, id, id)
-        url="http://ceoaperms1.ap.gov.in/Electoral_Rolls/Popuppage.aspx?partNumber="+str(id)+"&roll=EnglishMotherRoll&districtName=DIST_" + str(self.district).zfill(2) + "&acname=AC_" + str(self.ac).zfill(3) + "&acnameeng=A" + str(self.ac).zfill(3) + "&acno=" + str(self.ac) + "&acnameurdu=" + str(self.ac)
+        url="http://ceoaperms.ap.gov.in/Electoral_Rolls/Popuppage.aspx?partNumber="+str(id)+"&roll=EnglishMotherRoll&districtName=DIST_" + str(self.district).zfill(2) + "&acname=AC_" + str(self.ac).zfill(3) + "&acnameeng=A" + str(self.ac).zfill(3) + "&acno=" + str(self.ac) + "&acnameurdu=" + str(self.ac).zfill(3)
         retryCount=0
         outfile=self.args.output + "/" + str(self.district) + "_" + str(self.ac) + "/" + str(self.district) + "_" + str(self.ac) + "_" + str(id) + ".pdf"
         os.makedirs(os.path.dirname(outfile), exist_ok=True)
@@ -437,7 +438,7 @@ class BoothsDataDownloader:
                 session.headers.update({'User-Agent': choice(DESKTOP_AGENTS),'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'})
 
                 if retryCount > 0:
-                    logger.debug("Retrying the download %d", retryCount)
+                    logger.debug("[%d_%d_%d] Retrying the download %d", self.district, self.ac, id, retryCount)
 
                 retryCount+=1
                 result = session.post(url, proxies=self.proxy, timeout=60)
@@ -470,7 +471,7 @@ class BoothsDataDownloader:
                 }
 
                 time.sleep(randint(2,6)) # to fake as human
-                results = session.post(url, data=formData, proxies=self.proxy, timeout=240, stream=True)
+                results = session.post(url, data=formData, proxies=self.proxy, timeout=600, stream=True)
                 if not results:
                     logger.error("[%d_%d_%d] Failed to post, empty results with proxy %s", self.district, self.ac, id, self.proxy)
                     FAILED_BOOTHS.append(id) if id not in FAILED_BOOTHS else {}
@@ -479,19 +480,35 @@ class BoothsDataDownloader:
                     logger.error("[%d_%d_%d] Failed to post request, code %d", self.district, self.ac, id, results.status_code)
                     logger.error(results.reason)
                     continue
-                if result.status_code == 200:
-                    if "Please enter correct captcha" in result.text:
+                if results.status_code == 200:
+                    if "Please enter correct captcha" in results.text or 'Enter Verifaction Code' in results.text:
                         retryCount+=1
-                        logger.debug("[%s] Captcha failed. retrying %d...", self.keyword, retryCount)
+                        logger.debug("[%d_%d_%d] Captcha failed. retrying %d...", self.district, self.ac, id, retryCount)
                         continue
 
-                    with open(outfile, 'wb') as myfile:
-                        myfile.write(results.content)
-                        logger.info("[%d_%d_%d] Successfully downloaded the file %s", self.district, self.ac, id, outfile)
+                    timeoutCount = 0
+                    while timeoutCount <= 5:
+                        try:
+                            with open(outfile, 'wb') as myfile:
+                                logger.info("[%d_%d_%d] Downloading the file %s", self.district, self.ac, id, outfile)
+                                chunks = results.iter_content(chunk_size=2048)
+                                for chunk in chunks:
+                                    myfile.write(chunk)
+                                logger.info("[%d_%d_%d] Successfully downloaded the file %s", self.district, self.ac, id, outfile)
+                                return results
+                        except requests.exceptions.Timeout:
+                            logger.error("[%d_%d_%d] timeout, retry %d", self.district, self.ac, id, timeoutCount)
+                            timeoutCount+=1
+                            continue
+
                 return results
+            FAILED_BOOTHS.append(id) if id not in FAILED_BOOTHS else {}
+
         except Exception as e:
             logger.error("[%d_%d] Failed to process booth voters data for booth ID %d", self.district, self.ac, id)
             logger.error(str(e))
+            logger.error(traceback.print_exc)
+
 
 
 def get_id_between(line, start, end, prefix):
@@ -961,7 +978,7 @@ def download_booths_data(args, district, ac):
             for proxy in proxy_list:
                 try:
                     p = {'http': proxy}
-                    result= requests.post("http://ceoaperms1.ap.gov.in/Electoral_Rolls/Rolls.aspx", proxies=p, timeout=15)
+                    result= requests.post("http://ceoaperms.ap.gov.in/Electoral_Rolls/Rolls.aspx", proxies=p, timeout=15)
                     if result.status_code == 200:
                         continue
                     proxy_list.remove(proxy)
@@ -1001,7 +1018,7 @@ def download_booths_data(args, district, ac):
                 executor.submit(BoothsDataDownloader, args, district, ac, int(id))
                 count+=1
 
-        for i in range(5):
+        for i in range(2):
             if len(FAILED_BOOTHS) <= 0 or killThreads or args.limit > 0 and count >= args.limit:
                 break
             logger.info("========= PROCESSING FAILED BOOTHS (%d) =============", len(FAILED_BOOTHS))
