@@ -307,7 +307,7 @@ class BoothsDataDownloader:
                   'ddlDist': self.district,
                   'ddlAC': 0
             }
-            result = self.session.post(LOGIN_URL, data=baseData, proxies=self.proxy)
+            result = self.session.post(LOGIN_URL, data=baseData, proxies=self.proxy, timeout=240)
             if not result or result.status_code != 200:
                 logger.error("Failed to login, code %d", result.status_code)
                 logger.error(result.reason)
@@ -376,7 +376,7 @@ class BoothsDataDownloader:
 
     def __validate_non_proxy_get_request(self):
         try:
-            return self.session.get(LOGIN_URL, timeout=10)
+            return self.session.get(LOGIN_URL, timeout=30)
         except Exception as e:
             logger.error("[{}_{}] {}".format(self.args.district, self.args.ac, str(e)))
         return None
@@ -410,7 +410,7 @@ class BoothsDataDownloader:
         }
 
         time.sleep(randint(2,6)) # to fake as human
-        results = self.session.post(LOGIN_URL, data=formData, proxies=self.proxy, timeout=60)
+        results = self.session.post(LOGIN_URL, data=formData, proxies=self.proxy, timeout=240)
         if not results:
             logger.error("[%d_%d] Failed to post for booth data, empty results with proxy %s", self.district,self.ac, self.proxy)
             return None
@@ -441,7 +441,7 @@ class BoothsDataDownloader:
                     logger.debug("[%d_%d_%d] Retrying the download %d", self.district, self.ac, id, retryCount)
 
                 retryCount+=1
-                result = session.post(url, proxies=self.proxy, timeout=60)
+                result = session.post(url, proxies=self.proxy, timeout=240)
                 if not result:
                     logger.error("[%d_%d_%d] Failed to post for booth data, empty results", self.district,self.ac, id)
                     FAILED_BOOTHS.append(id) if id not in FAILED_BOOTHS else {}
