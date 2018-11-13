@@ -34,7 +34,7 @@ app.route('/upload')
     });
 
 app.get('/download/:file(*)',(req, res) => {
-	let outfile = req.params.file.replace(/.pdf|.png|.jpeg|.txt|.csv|.xlsx/gi, ".xlsx");
+	let outfile = req.params.file.replace("download","").replace(/.pdf|.png|.jpeg|.txt|.csv|.xlsx/gi, ".xlsx");
 	let fileLocation = path.join('./output/', outfile);
 	fs.exists(fileLocation, function(exists) {
 		if (exists) {
