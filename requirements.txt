@@ -1,0 +1,11 @@
+redis
+pytesseract
+requests
+proxybroker
+pandas
+Image
+Pillow
+asyncio
+beautifulsoup4
+lxml
+requests

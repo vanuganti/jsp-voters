@@ -21,7 +21,6 @@ import pandas as pd
 import hashlib
 import redis
 from io import BytesIO
-import shutil
 
 
 try:
@@ -1125,6 +1124,54 @@ class ACDBoothDataDownloader:
     def __init__(self, args, district, ac):
         return BoothsDataDownloader(args, int(district), int(ac)).download()
 
+class ACDVoterDataDownloader:
+    def __init__(self, args, district, ac):
+        return BoothsDataDownloader(args, int(district), int(ac)).get_voters()
+
+def download_ac_voters_data(args, district, ac, booth_data=None):
+    global killThreads
+
+    try:
+        if not booth_data:
+            logger.info("[%d_%d] Downloading booth data", district, ac)
+            data=BoothsDataDownloader(args, district, ac).download()
+            booth_data=range(1, len(data) + 1)
+
+        if args.skipvoters:
+            logger.info("VOTERS DATA is skipped due to --skipvoters, total booths: %d", len(booth_data))
+            return
+
+        logger.info("Launching %d threads to process %d booths", args.threads, len(booth_data))
+
+        count=0
+        with ThreadPoolExecutor(max_workers=args.threads) as executor:
+            for id in booth_data:
+                if args.limit > 0 and count >= args.limit:
+                    logger.info("[%d_%d] LIMIT %d reached, exiting...", district, ac, args.limit)
+                    break
+                if killThreads:
+                    break
+                executor.submit(BoothsDataDownloader, args, district, ac, int(id))
+                count+=1
+
+            for i in range(2):
+                if len(FAILED_BOOTHS) <= 0 or killThreads or args.limit > 0 and count >= args.limit:
+                    break
+                logger.info("========= PROCESSING FAILED BOOTHS (%d) =============", len(FAILED_BOOTHS))
+                with ThreadPoolExecutor(max_workers=args.threads) as executor:
+                    for id in FAILED_BOOTHS:
+                        if killThreads:
+                            break
+                        executor.submit(BoothsDataDownloader, args, district, ac, int(id))
+
+    except KeyboardInterrupt:
+        logger.error("Keyboard interrupt received, killing it")
+        killThreads = True
+    except Exception as e:
+        logger.error(str(e))
+        traceback.print_exc(file=sys.stdout)
+
+
 #
 # Download booth data
 #
@@ -1169,20 +1216,9 @@ def download_booths_data(args, district, ac):
                 logger.debug(ac_data)
                 acs=[ac['value'] for ac in ac_data]
                 logger.info(acs)
-                logger.info("Launching %d threads to process %d ACS", args.threads, len(acs))
-                count=0
-                with ThreadPoolExecutor(max_workers=args.threads) as executor:
-                    for ac in acs:
-                        if args.limit > 0 and count >= args.limit:
-                            logger.info("[%d_%d] LIMIT %d reached, exiting...", district, ac, args.limit)
-                            break
-                        if killThreads:
-                            break
-                        executor.submit(ACDBoothDataDownloader, args, district, ac)
-                        count+=1
 
-                logger.info("Downloaded all booth details for district %d", int(district))
-                return
+                for ac in acs:
+                    download_ac_voters_data(args, district, ac)
             else:
                 logger.info("Download the booth data for district %d, ac: %d", district, ac)
                 booth_output_dir=args.output + "/" + str(district) + "_" + str(ac)
@@ -1196,33 +1232,7 @@ def download_booths_data(args, district, ac):
                     data=BoothsDataDownloader(args, district, ac).download()
                     #set_raw_key(booth_file, len(data))
                     booth_data=range(1, len(data) + 1)
-
-        if args.skipvoters:
-            logger.info("VOTERS DATA is skipped due to --skipvoters, total booths: %d", len(booth_data))
-            return
-
-        logger.info("Launching %d threads to process %d booths", args.threads, len(booth_data))
-
-        count=0
-        with ThreadPoolExecutor(max_workers=args.threads) as executor:
-            for id in booth_data:
-                if args.limit > 0 and count >= args.limit:
-                    logger.info("[%d_%d] LIMIT %d reached, exiting...", district, ac, args.limit)
-                    break
-                if killThreads:
-                    break
-                executor.submit(BoothsDataDownloader, args, district, ac, int(id))
-                count+=1
-
-        for i in range(2):
-            if len(FAILED_BOOTHS) <= 0 or killThreads or args.limit > 0 and count >= args.limit:
-                break
-            logger.info("========= PROCESSING FAILED BOOTHS (%d) =============", len(FAILED_BOOTHS))
-            with ThreadPoolExecutor(max_workers=args.threads) as executor:
-                for id in FAILED_BOOTHS:
-                    if killThreads:
-                        break
-                    executor.submit(BoothsDataDownloader, args, district, ac, int(id))
+                download_ac_voters_data(args, district, ac, booth_data)
 
     except KeyboardInterrupt:
         logger.error("Keyboard interrupt received, killing it")
