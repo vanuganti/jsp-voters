@@ -696,9 +696,12 @@ def remove_special_chars(str):
 
 
 class ProcessTextFile():
-    def __init__(self, args, file):
+    def __init__(self, args, file, execute=True):
         self.args=args
         self.input_file=file
+
+        if execute:
+            return self.run()
 
     def run(self):
         return self.__parse_voters_data(self.args, self.input_file)
@@ -1347,10 +1350,13 @@ def set_raw_key(key, value):
     return None
 
 class ProcessImageFile():
-    def __init__(self, args, file):
+    def __init__(self, args, file, execute=True):
         self.args=args
         self.file=file
-        logger.info("Processing IMAGE file %s", file)
+
+        if execute:
+            logger.info("Processing IMAGE file %s", file)
+            return self.run()
 
     def run(self):
         if not os.path.isfile(self.file):
@@ -1368,8 +1374,7 @@ class ProcessImageFile():
         command="tesseract '" + tiff_file + "' '" + text_file + "' --psm 6 -l eng -c preserve_interword_spaces=1"
         logger.debug(command)
         os.system(command)
-        time.sleep(4)
-        return ProcessTextFile(self.args, text_file + ".txt").run()
+        return ProcessTextFile(self.args, text_file + ".txt", True)
 
 #
 # process inputfile
@@ -1377,10 +1382,10 @@ class ProcessImageFile():
 def process_input_file(input_file, args):
     if input_file.lower().endswith('.txt'):
         logger.info("Input file is TEXT, so skipping image conversion")
-        return ProcessTextFile(args, input_file).run()
+        return ProcessTextFile(args, input_file)
     if input_file.lower().endswith('.pdf') or input_file.lower().endswith('.png') or input_file.lower().endswith('.jpeg') or input_file.lower().endswith('.jpg'):
         logger.info("Input file is PDF/IMAGE, doing image conversion")
-        return ProcessTextFile(args, input_file).run()
+        return ProcessTextFile(args, input_file)
     if os.path.isdir(input_file):
         logger.info("Input %s is a directory, finding all pdf files for processing", input_file)
         pdf_files=[]
@@ -1397,7 +1402,7 @@ def process_input_file(input_file, args):
                     break
                 if killThreads:
                     break
-                executor.submit(ProcessImageFile.run, args, file)
+                executor.submit(ProcessImageFile, args, file)
                 count+=1
         return
     logger.error("Un-supported input file format, exiting")
