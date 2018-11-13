@@ -21,6 +21,7 @@ import pandas as pd
 import hashlib
 import redis
 from io import BytesIO
+import shutil
 
 
 try:
@@ -111,10 +112,11 @@ class ProxyList:
 # captcha extract from image using teserract
 #
 class ImageToText:
-    def __init__(self, session, url, image):
+    def __init__(self, session, proxy, url, image):
         self.image = image
         self.session = session
         self.url = url
+        self.proxy = proxy
 
         if self.session and url:
             self.session.headers.update({'referer': self.url})
@@ -125,7 +127,7 @@ class ImageToText:
     #
     def __image_to_text(self):
         try:
-            response = self.session.get("http://ceoaperms.ap.gov.in/Electoral_Rolls/Captcha.aspx", stream=True)
+            response = self.session.get("http://ceoaperms.ap.gov.in/Electoral_Rolls/Captcha.aspx", stream=True, proxies=self.proxy)
             if response.status_code != 200:
                 logger.error(response)
                 return None
@@ -147,6 +149,10 @@ class ImageToText:
             return None
         except Exception as e:
             logger.error("Failed to parse captcha, " + str(e))
+            if "Max retries exceeded" in str(e):
+                logger.error("Removing proxy {}".format(self.proxy))
+                PROXY_LIST.remove(self.proxy['http'])
+                logger.info(PROXY_LIST)
             return None
 
     #
@@ -155,7 +161,6 @@ class ImageToText:
     def __get_text_from_image(self):
         for i in range(25):
             image_text = self.__image_to_text()
-            logger.debug(image_text)
             if image_text is None:
                 return None
             if len(image_text) == 6 and re.match('^[\w-]+$', image_text) is not None:
@@ -236,16 +241,16 @@ PROXY_LIST = [
 ]
 
 DESKTOP_AGENTS = [
-    'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/602.2.14 (KHTML, like Gecko) Version/10.0.1 Safari/602.2.14',
-    'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.98 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.98 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; WOW64; rv:50.0) Gecko/20100101 Firefox/50.0'
+    'Chrome/54.0.2840.99 Safari/537.36',
+    'Chrome/54.0.2840.99 Safari/537.36',
+    'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1)',
+    'AppleWebKit/537.36 (KHTML, like Gecko)',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/537.36',
+    'Gecko) Chrome',
+    'Mozilla/5.0',
+    'Windows NT 6.1',
+    'Windows NT 10.0; WOW64; rv:50.0'
 ]
 
 class BoothsDataDownloader:
@@ -258,7 +263,7 @@ class BoothsDataDownloader:
 
         if id is not None:
             try:
-                return self.__download_voters_by_booth_id(id)
+                return self.__download_voters_by_booth_id(int(id))
             except Exception as e:
                 logger.error("[%d_%d] Failed to process both voters data for booth ID %d", self.district, self.ac, id)
                 logger.error(str(e))
@@ -282,7 +287,7 @@ class BoothsDataDownloader:
                         break
                     self.proxy={'http': choice(PROXY_LIST)}
             else:
-                logger.info("[%d_%d] Start downloading ...", self.district, self.ac)
+                logger.info("[%d_%d] Start downloading booth data...", self.district, self.ac)
                 url = self.__validate_non_proxy_get_request()
 
             if url is None:
@@ -421,87 +426,149 @@ class BoothsDataDownloader:
         return results
 
 
+    def __process_captcha_request(self, url, outfile, results, id):
+
+        if not results or not results.text:
+            FAILED_BOOTHS.append(id) if id not in FAILED_BOOTHS else {}
+            return None
+
+        retry_count=0
+        html = results.text
+
+        while retry_count <= 20:
+
+            if not html:
+                FAILED_BOOTHS.append(id) if id not in FAILED_BOOTHS else {}
+                return None
+
+            logger.debug("[%d_%d_%d]  Captcha parsing start...", self.district, self.ac, id)
+            soup = BeautifulSoup(html, "lxml")
+            captcha_text = ImageToText(self.session, self.proxy, url, outfile).get()
+            logger.debug("[%d_%d_%d]  Captcha parsing done...", self.district, self.ac, id)
+
+            if not captcha_text:
+                FAILED_BOOTHS.append(id) if id not in FAILED_BOOTHS else {}
+                return None
+
+            inputs = soup.findAll('input')
+            view_state = ''
+            event_validation = ''
+            for input in inputs:
+                if input['name'] == '__EVENTVALIDATION':
+                    event_validation = input['value']
+                if input['name'] == '__VIEWSTATE':
+                    view_state = input['value']
+
+            formData = {
+                '__VIEWSTATE' : view_state,
+                '__EVENTVALIDATION' : event_validation,
+                'txtVerificationCode': captcha_text,
+                'btnSubmit': 'Submit'
+            }
+
+            time.sleep(randint(2,6)) # to fake as human
+            results = self.session.post(url, data=formData, proxies=self.proxy, timeout=300, stream=True)
+
+            if not results:
+                logger.error("[%d_%d_%d] Failed to post, empty results with proxy %s", self.district, self.ac, id, self.proxy)
+                FAILED_BOOTHS.append(id) if id not in FAILED_BOOTHS else {}
+                return None
+
+            if results and results.status_code != 200:
+                logger.error("[%d_%d_%d] Failed to post request, code %d", self.district, self.ac, id, results.status_code)
+                logger.error(results.reason)
+                return "ERROR"
+
+            try:
+                count=0
+                last_chunk=None
+                bytes=0
+
+                with open(outfile, 'wb') as myfile:
+                    logger.info("[%d_%d_%d]  Downloading the file %s", self.district, self.ac, id, outfile)
+                    chunks = results.iter_content(chunk_size=1024*64)
+                    for chunk in chunks:
+                        last_chunk=chunk
+                        count+=1
+                        bytes+=len(chunk)
+                        myfile.write(chunk)
+
+                if count == 1 and last_chunk:
+                    if b'Please enter correct captcha' in last_chunk or b'Enter Verifaction Code' in last_chunk:
+                        logger.debug("[%d_%d_%d] Captcha failed %s. retrying %d...", self.district, self.ac, id, captcha_text, retry_count)
+                        retry_count+=1
+                        html=last_chunk
+                        continue
+
+                    if b'error occured on our website' in last_chunk:
+                        logger.debug("[%d_%d_%d] Error occured in the page...", self.district, self.ac, id)
+                        return "ERROR"
+
+                logger.info("[%d_%d_%d]  File %s downloaded, total bytes: %d", self.district, self.ac, id, outfile, bytes)
+                return None
+
+            except requests.exceptions.Timeout:
+                logger.error("[%d_%d_%d] timeout, retry %d", self.district, self.ac, id)
+                return "ERROR"
+
+            except Exception as e:
+                logger.error("[%d_%d_%d] Exception, %s", self.district, self.ac, id, str(e))
+                return "ERROR"
+
+            return None
+        return None
+
+
     def __download_voters_by_booth_id(self, id):
-        logger.debug("[%d_%d_%d] Processing booth %d", self.district, self.ac, id, id)
+        logger.info("[%d_%d_%d] Processing booth %d", self.district, self.ac, id, id)
         url="http://ceoaperms.ap.gov.in/Electoral_Rolls/Popuppage.aspx?partNumber="+str(id)+"&roll=EnglishMotherRoll&districtName=DIST_" + str(self.district).zfill(2) + "&acname=AC_" + str(self.ac).zfill(3) + "&acnameeng=A" + str(self.ac).zfill(3) + "&acno=" + str(self.ac) + "&acnameurdu=" + str(self.ac).zfill(3)
-        retryCount=0
         outfile=self.args.output + "/" + str(self.district) + "_" + str(self.ac) + "/" + str(self.district) + "_" + str(self.ac) + "_" + str(id) + ".pdf"
         os.makedirs(os.path.dirname(outfile), exist_ok=True)
 
-        global killThreads
-        try:
-            if killThreads:
-                return None
+        #file_exists=get_raw_key(outfile)
+        #if file_exists and int(file_exists) > 0:
+        #    logger.info("[%d_%d_%d] File %s already processed, exists with %d bytes.. skip", self.district,self.ac, id, outfile, int(file_exists))
+        #    return
 
-            while retryCount <= 25:
-                session = requests.Session()
-                session.headers.update({'User-Agent': choice(DESKTOP_AGENTS),'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'})
+        global killThreads
+
+        try:
+            retryCount=0
+
+            while retryCount <= 5:
+                if killThreads:
+                    return None
+
+                if not self.session:
+                    self.session = requests.Session()
+
+                self.session.headers.update({'User-Agent': choice(DESKTOP_AGENTS),'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'})
 
                 if retryCount > 0:
                     logger.debug("[%d_%d_%d] Retrying the download %d", self.district, self.ac, id, retryCount)
 
                 retryCount+=1
-                result = session.post(url, proxies=self.proxy, timeout=240)
+
+                logger.debug("[%d_%d_%d]  post request without captcha start...", self.district, self.ac, id)
+                result = self.session.post(url, proxies=self.proxy, timeout=60)
+                logger.debug("[%d_%d_%d]  post request without captcha done...", self.district, self.ac, id)
+
                 if not result:
                     logger.error("[%d_%d_%d] Failed to post for booth data, empty results", self.district,self.ac, id)
                     FAILED_BOOTHS.append(id) if id not in FAILED_BOOTHS else {}
                     return None
+
                 if result and result.status_code != 200:
                     logger.error("[%d_%d_%d] Failed to post request, code %d", self.district,self.ac, id, result.status_code)
                     logger.error(result.reason)
                     continue
 
-                soup = BeautifulSoup(result.text, "lxml")
-                captcha_text = ImageToText(session, url, outfile).get()
-
-                inputs = soup.findAll('input')
-                view_state = ''
-                event_validation = ''
-                for input in inputs:
-                    if input['name'] == '__EVENTVALIDATION':
-                        event_validation = input['value']
-                    if input['name'] == '__VIEWSTATE':
-                        view_state = input['value']
-
-                formData = {
-                    '__VIEWSTATE' : view_state,
-                    '__EVENTVALIDATION' : event_validation,
-                    'txtVerificationCode': captcha_text,
-                    'btnSubmit': 'Submit'
-                }
-
-                time.sleep(randint(2,6)) # to fake as human
-                results = session.post(url, data=formData, proxies=self.proxy, timeout=600, stream=True)
-                if not results:
-                    logger.error("[%d_%d_%d] Failed to post, empty results with proxy %s", self.district, self.ac, id, self.proxy)
-                    FAILED_BOOTHS.append(id) if id not in FAILED_BOOTHS else {}
-                    return None
-                if results and results.status_code != 200:
-                    logger.error("[%d_%d_%d] Failed to post request, code %d", self.district, self.ac, id, results.status_code)
-                    logger.error(results.reason)
+                if self.__process_captcha_request(url, outfile, result, id):
+                    retryCount+=1
+                    logger.error("[%d_%d_%d] Failed to post request, retrying...", self.district, self.ac, id)
                     continue
-                if results.status_code == 200:
-                    if "Please enter correct captcha" in results.text or 'Enter Verifaction Code' in results.text:
-                        retryCount+=1
-                        logger.debug("[%d_%d_%d] Captcha failed. retrying %d...", self.district, self.ac, id, retryCount)
-                        continue
 
-                    timeoutCount = 0
-                    while timeoutCount <= 5:
-                        try:
-                            with open(outfile, 'wb') as myfile:
-                                logger.info("[%d_%d_%d] Downloading the file %s", self.district, self.ac, id, outfile)
-                                chunks = results.iter_content(chunk_size=2048)
-                                for chunk in chunks:
-                                    myfile.write(chunk)
-                                logger.info("[%d_%d_%d] Successfully downloaded the file %s", self.district, self.ac, id, outfile)
-                                return results
-                        except requests.exceptions.Timeout:
-                            logger.error("[%d_%d_%d] timeout, retry %d", self.district, self.ac, id, timeoutCount)
-                            timeoutCount+=1
-                            continue
-
-                return results
+                return None
             FAILED_BOOTHS.append(id) if id not in FAILED_BOOTHS else {}
 
         except Exception as e:
@@ -533,7 +600,7 @@ def remove_special_chars(str):
 def parse_voters_data(args, input_file):
     if not input_file:
         logger.error("Missing input file, returning")
-        return
+        return False
 
     try:
         logger.info("Converting INPUT TEXT FILE %s ", input_file)
@@ -541,7 +608,7 @@ def parse_voters_data(args, input_file):
     except IOError as e:
         logger.error("Failed to OPEN INPUT FILE %s", input_file)
         logger.error(str(e))
-        return
+        return False
 
     metadata={}
     voters=[]
@@ -954,11 +1021,13 @@ def parse_voters_data(args, input_file):
         logger.info("Total records: %d, malformed: %d, areas: %d, pages: %d", len(voters), len(malformed), len(area_names), metadata['PAGES'])
         logger.info("{}".format(metadata))
         logger.info("CONVERSION DONE")
+        return len(voters) > 0
 
     except Exception as e:
         logger.error("Exception in the line '{}': {}".format(lno, sline))
         logger.error(voter)
         logger.error(e, exc_info=True)
+        return False
 
 
 #
@@ -1002,8 +1071,15 @@ def download_booths_data(args, district, ac):
             logger.info("Download the booth data for district %d, ac: %d", district, ac)
             booth_output_dir=args.output + "/" + str(district) + "_" + str(ac)
             os.makedirs(booth_output_dir, exist_ok=True)
-            data=BoothsDataDownloader(args, district, ac).download()
-            booth_data=range(1, len(data) + 1)
+            booth_file=args.output + "/" + str(district) + "_" + str(ac) + "/" +str( district) + "_" + str(ac) + "_booths.csv"
+            data=get_raw_key(booth_file)
+            if data and int(data) >= 0:
+                logger.info("Booth data exists (%d booths), re-using it", int(data))
+                booth_data=range(1, int(data) + 1)
+            else:
+                data=BoothsDataDownloader(args, district, ac).download()
+                #set_raw_key(booth_file, len(data))
+                booth_data=range(1, len(data) + 1)
 
         logger.info("Launching %d threads to process %d booths", args.threads, len(booth_data))
 
@@ -1063,6 +1139,20 @@ def set_key(key, value):
         return REDIS.set("VOTER-"+key, value)
     return None
 
+def get_raw_key(key):
+    global REDIS
+    if REDIS:
+        val=REDIS.get("RAW-"+hashlib.md5(key.encode('utf-8')).hexdigest())
+        if val:
+            return val.decode()
+    return None
+
+def set_raw_key(key, value):
+    global REDIS
+    if REDIS:
+        return REDIS.set("RAW-"+hashlib.md5(key.encode('utf-8')).hexdigest(), value)
+    return None
+
 #
 # convert image to text
 #
@@ -1089,8 +1179,8 @@ def convert_image_file_to_text(args, input_file):
     command="tesseract '" + tiff_file + "' '" + text_file + "' --psm 6 -l eng -c preserve_interword_spaces=1"
     logger.debug(command)
     os.system(command)
-    set_key(md5, text_file + ".txt")
-    return parse_voters_data(args, text_file + ".txt")
+    if parse_voters_data(args, text_file + ".txt"):
+        set_key(md5, text_file + ".txt")
 
 
 #
