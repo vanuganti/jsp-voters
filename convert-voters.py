@@ -519,6 +519,7 @@ class BoothsDataDownloader:
     def __process_captcha_request(self, url, outfile, results, id):
 
         if not results or not results.text:
+            logger.error("[%d_%d_%d] No data from the response, returning", self.district, self.ac, id)
             return add_to_failed_list(id)
 
         retry_count=0
@@ -526,18 +527,19 @@ class BoothsDataDownloader:
 
         while retry_count <= 20:
 
-            return add_to_failed_list(id) if not html else {}
+            if not html:
+                return add_to_failed_list(id)
 
             logger.info("[%d_%d_%d] Posting request %s", self.district, self.ac, id, (", retry " + str(retry_count)) if retry_count>0 else "")
 
             logger.debug("[%d_%d_%d]  Captcha parsing start...", self.district, self.ac, id)
-            soup = BeautifulSoup(html, "lxml")
             captcha_text = ImageToText(self.session, self.proxy, url, outfile).get()
             logger.debug("[%d_%d_%d]  Captcha parsing done...", self.district, self.ac, id)
 
-            return add_to_failed_list(id) if not captcha_text else {}
+            if not captcha_text:
+                return add_to_failed_list(id)
 
-            inputs = soup.findAll('input')
+            inputs = BeautifulSoup(html, "lxml").findAll('input')
             view_state = ''
             event_validation = ''
 
@@ -623,9 +625,9 @@ class BoothsDataDownloader:
         global killThreads
 
         try:
-            retryCount=0
+            retry_count=0
 
-            while retryCount <= 5:
+            while retry_count <= 5:
                 if killThreads:
                     return None
 
@@ -634,10 +636,10 @@ class BoothsDataDownloader:
 
                 self.session.headers.update({'User-Agent': choice(DESKTOP_AGENTS),'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'})
 
-                if retryCount > 0:
-                    logger.debug("[%d_%d_%d] Retrying the download %d", self.district, self.ac, id, retryCount)
+                if retry_count > 0:
+                    logger.debug("[%d_%d_%d] Retrying the download %d", self.district, self.ac, id, retry_count)
 
-                retryCount+=1
+                retry_count+=1
 
                 logger.debug("[%d_%d_%d]  post request without captcha start...", self.district, self.ac, id)
                 result = self.session.post(url, proxies=self.proxy, timeout=60)
@@ -652,9 +654,13 @@ class BoothsDataDownloader:
                     logger.error(result.reason)
                     continue
 
+                if result and result.status_code == 429:
+                    logger.error("[%d_%d_%d] Too many requests warning, sleep & retry %d", self.district,self.ac, id, retry_count)
+                    time.sleep(randint(5,10))
+                    continue
+
                 data = self.__process_captcha_request(url, outfile, result, id)
                 if data and data == "ERROR":
-                    retryCount+=1
                     logger.error("[%d_%d_%d] Failed to post request, retrying...", self.district, self.ac, id)
                     continue
 
