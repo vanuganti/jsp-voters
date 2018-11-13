@@ -1218,7 +1218,7 @@ def download_booths_data(args, district, ac):
                 logger.info(acs)
 
                 for ac in acs:
-                    download_ac_voters_data(args, district, ac)
+                    download_ac_voters_data(args, district, int(ac))
             else:
                 logger.info("Download the booth data for district %d, ac: %d", district, ac)
                 booth_output_dir=args.output + "/" + str(district) + "_" + str(ac)
