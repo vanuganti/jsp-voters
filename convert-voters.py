@@ -35,7 +35,8 @@ logger.setLevel(logging.DEBUG)
 
 LOGIN_URL="http://ceoaperms.ap.gov.in/Electoral_Rolls/Rolls.aspx"
 TOTAL_COUNT=0
-FAILED_BOOTHS=[]
+FAILED_LIST=[]
+SUCCESS_LIST=[]
 killThreads=False
 CSVLOCK=threading.Lock()
 REDIS=None
@@ -92,6 +93,7 @@ def init_options():
 # 13-Chittoor,      162-175
 
 class ProxyList:
+
     async def __append_list(self, proxy_list, proxies):
         while True:
             proxy = await proxies.get()
@@ -150,9 +152,7 @@ class ImageToText:
         except Exception as e:
             logger.error("Failed to parse captcha, " + str(e))
             if "Max retries exceeded" in str(e):
-                logger.error("Removing proxy {}".format(self.proxy))
-                PROXY_LIST.remove(self.proxy['http'])
-                logger.info(PROXY_LIST)
+                add_remove_proxy(self.proxy)
             return None
 
     #
@@ -257,20 +257,12 @@ DESKTOP_AGENTS = [
 
 
 class BoothsDataDownloader:
-    def __init__(self, args, district=None, ac=None, id=None):
+    def __init__(self, args, district=None, ac=None):
         self.args=args
-        self.district=district if district is not None else args.district
-        self.ac=ac if ac is not None else args.ac
+        self.district=int(district) if district is not None else int(args.district)
+        self.ac=int(ac) if ac is not None else int(args.ac)
         self.proxy={} if args.skipproxy else {'http': choice(PROXY_LIST)}
         self.session=None
-
-        if id is not None:
-            try:
-                return self.__download_voters_by_booth_id(int(id))
-            except Exception as e:
-                logger.error("[%d_%d] Failed to process both voters data for booth ID %d", self.district, self.ac, id)
-                logger.error(str(e))
-            return None
 
     def get_acs(self):
         global killThreads
@@ -357,7 +349,7 @@ class BoothsDataDownloader:
             logger.error("[%d] Exception %s", self.district, str(e))
             traceback.print_exc(file=sys.stdout)
 
-    def download(self):
+    def get_ac_booths(self):
         global killThreads
         try:
             if killThreads:
@@ -450,23 +442,31 @@ class BoothsDataDownloader:
             logger.error("[%d_%d] Exception %s", self.district, self.ac, str(e))
             traceback.print_exc(file=sys.stdout)
 
+
+    def get_booth_voters(self, booth_id):
+        if booth_id is None:
+            return
+
+        booth_id=int(booth_id)
+
+        try:
+            return self.__download_voters_by_booth_id(booth_id)
+        except Exception as e:
+            logger.error("[%d_%d] Failed to process both voters data for booth ID %d", self.district, self.ac, booth_id)
+            logger.error(str(e))
+        return None
+
     def __validate_proxy_get_request(self, random_proxy):
         try:
             return self.session.get(LOGIN_URL, proxies=random_proxy, timeout=30)
         except requests.exceptions.ProxyError as e:
             logger.error("[{}_{}] {}".format(self.district, self.ac, str(e)))
             if len(random_proxy) > 0:
-                logger.info("Removing proxy %s", random_proxy['http'])
-                if random_proxy['http'] in PROXY_LIST:
-                    PROXY_LIST.remove(random_proxy['http'])
-                    logger.info(PROXY_LIST)
+                add_remove_proxy(random_proxy)
         except Exception as e:
             logger.error("[{}_{}] {}".format(self.args.district, self.args.ac, str(e)))
             if len(random_proxy) > 0:
-                logger.info("Removing proxy %s", random_proxy['http'])
-                if random_proxy['http'] in PROXY_LIST:
-                    PROXY_LIST.remove(random_proxy['http'])
-                    logger.info(PROXY_LIST)
+                add_remove_proxy(random_proxy)
         return None
 
     def __validate_non_proxy_get_request(self):
@@ -519,30 +519,28 @@ class BoothsDataDownloader:
     def __process_captcha_request(self, url, outfile, results, id):
 
         if not results or not results.text:
-            FAILED_BOOTHS.append(id) if id not in FAILED_BOOTHS else {}
-            return None
+            return add_to_failed_list(id)
 
         retry_count=0
         html = results.text
 
         while retry_count <= 20:
 
-            if not html:
-                FAILED_BOOTHS.append(id) if id not in FAILED_BOOTHS else {}
-                return None
+            return add_to_failed_list(id) if not html else {}
+
+            logger.info("[%d_%d_%d] Posting request %s", self.district, self.ac, id, (", retry " + str(retry_count)) if retry_count>0 else "")
 
             logger.debug("[%d_%d_%d]  Captcha parsing start...", self.district, self.ac, id)
             soup = BeautifulSoup(html, "lxml")
             captcha_text = ImageToText(self.session, self.proxy, url, outfile).get()
             logger.debug("[%d_%d_%d]  Captcha parsing done...", self.district, self.ac, id)
 
-            if not captcha_text:
-                FAILED_BOOTHS.append(id) if id not in FAILED_BOOTHS else {}
-                return None
+            return add_to_failed_list(id) if not captcha_text else {}
 
             inputs = soup.findAll('input')
             view_state = ''
             event_validation = ''
+
             for input in inputs:
                 if input['name'] == '__EVENTVALIDATION':
                     event_validation = input['value']
@@ -561,8 +559,7 @@ class BoothsDataDownloader:
 
             if not results:
                 logger.error("[%d_%d_%d] Failed to post, empty results with proxy %s", self.district, self.ac, id, self.proxy)
-                FAILED_BOOTHS.append(id) if id not in FAILED_BOOTHS else {}
-                return None
+                return add_to_failed_list(id)
 
             if results and results.status_code != 200:
                 logger.error("[%d_%d_%d] Failed to post request, code %d", self.district, self.ac, id, results.status_code)
@@ -583,7 +580,7 @@ class BoothsDataDownloader:
                         bytes+=len(chunk)
                         myfile.write(chunk)
 
-                if count == 1 and last_chunk:
+                if count == 1 and last_chunk is not None:
                     if b'Please enter correct captcha' in last_chunk or b'Enter Verifaction Code' in last_chunk:
                         logger.debug("[%d_%d_%d] Captcha failed %s. retrying %d...", self.district, self.ac, id, captcha_text, retry_count)
                         retry_count+=1
@@ -595,7 +592,7 @@ class BoothsDataDownloader:
                         return "ERROR"
 
                 logger.info("[%d_%d_%d]  File %s downloaded, total bytes: %d", self.district, self.ac, id, outfile, bytes)
-                return None
+                return remove_from_failed_list(id)
 
             except requests.exceptions.Timeout:
                 logger.error("[%d_%d_%d] timeout, retry %d", self.district, self.ac, id)
@@ -605,15 +602,23 @@ class BoothsDataDownloader:
                 logger.error("[%d_%d_%d] Exception, %s", self.district, self.ac, id, str(e))
                 return "ERROR"
 
-            return None
-        return None
+        return add_to_failed_list(id)
 
 
     def __download_voters_by_booth_id(self, id):
         logger.info("[%d_%d_%d] Processing booth %d", self.district, self.ac, id, id)
+
+        if id and id in SUCCESS_LIST:
+            logger.info("[%d_%d_%d] Booth already processed, skipping", self.district, self.ac, id, id)
+            return remove_from_failed_list(id)
+
         url="http://ceoaperms.ap.gov.in/Electoral_Rolls/Popuppage.aspx?partNumber="+str(id)+"&roll=EnglishMotherRoll&districtName=DIST_" + str(self.district).zfill(2) + "&acname=AC_" + str(self.ac).zfill(3) + "&acnameeng=A" + str(self.ac).zfill(3) + "&acno=" + str(self.ac) + "&acnameurdu=" + str(self.ac).zfill(3)
         outfile=self.args.output + "/" + str(self.district) + "_" + str(self.ac) + "/" + str(self.district) + "_" + str(self.ac) + "_" + str(id) + ".pdf"
         os.makedirs(os.path.dirname(outfile), exist_ok=True)
+
+        if self.args.dryrun:
+            logger.info("[%d_%d_%d] Processing booth %d)", self.district, self.ac, id, id)
+            return None
 
         #file_exists=get_raw_key(outfile)
         #if file_exists and int(file_exists) > 0:
@@ -645,26 +650,27 @@ class BoothsDataDownloader:
 
                 if not result:
                     logger.error("[%d_%d_%d] Failed to post for booth data, empty results", self.district,self.ac, id)
-                    FAILED_BOOTHS.append(id) if id not in FAILED_BOOTHS else {}
-                    return None
+                    return add_to_failed_list(id)
 
                 if result and result.status_code != 200:
                     logger.error("[%d_%d_%d] Failed to post request, code %d", self.district,self.ac, id, result.status_code)
                     logger.error(result.reason)
                     continue
 
-                if self.__process_captcha_request(url, outfile, result, id):
+                data = self.__process_captcha_request(url, outfile, result, id)
+                if data and data == "ERROR":
                     retryCount+=1
                     logger.error("[%d_%d_%d] Failed to post request, retrying...", self.district, self.ac, id)
                     continue
 
-                return None
-            FAILED_BOOTHS.append(id) if id not in FAILED_BOOTHS else {}
+                return remove_from_failed_list(id)
 
         except Exception as e:
             logger.error("[%d_%d] Failed to process booth voters data for booth ID %d", self.district, self.ac, id)
             logger.error(str(e))
             logger.error(traceback.print_exc)
+
+        return add_to_failed_list(id)
 
 
 
@@ -1119,22 +1125,48 @@ def parse_voters_data(args, input_file):
         logger.error(e, exc_info=True)
         return False
 
+def add_to_failed_list(booth_id):
+    try:
+        if booth_id and booth_id not in FAILED_LIST:
+            FAILED_LIST.append(booth_id)
+    except Exception as e:
+        logger.error(str(e))
+        pass
+    return None
 
-class ACDBoothDataDownloader:
-    def __init__(self, args, district, ac):
-        return BoothsDataDownloader(args, int(district), int(ac)).download()
+def remove_from_failed_list(booth_id):
+    try:
+        if booth_id and booth_id in FAILED_LIST:
+            FAILED_LIST.remove(booth_id)
+        if booth_id and booth_id not in SUCCESS_LIST:
+            SUCCESS_LIST.append(booth_id)
+    except Exception as e:
+        logger.error(str(e))
+        pass
+    return None
 
-class ACDVoterDataDownloader:
+class DownloadACs:
+    def __init__(self, args, district):
+        return BoothsDataDownloader(args, int(district)).get_acs()
+
+class DownloadACBooths:
     def __init__(self, args, district, ac):
-        return BoothsDataDownloader(args, int(district), int(ac)).get_voters()
+        return BoothsDataDownloader(args, int(district), int(ac)).get_booths()
+
+class DownloadVotersByBooth:
+    def __init__(self, args, district, ac, id):
+        return BoothsDataDownloader(args, int(district), int(ac)).get_booth_voters(int(id))
 
 def download_ac_voters_data(args, district, ac, booth_data=None):
     global killThreads
 
     try:
-        if not booth_data:
-            logger.info("[%d_%d] Downloading booth data", district, ac)
-            data=BoothsDataDownloader(args, district, ac).download()
+        if booth_data is None:
+            logger.info("[%d_%d] Missing booth data, downloading ...", district, ac)
+            data=DownloadACBooths(args, district, ac)
+            if data is None:
+                logger.error("[%d_%d] Failed to download booth data", district, ac)
+                return None
             booth_data=range(1, len(data) + 1)
 
         if args.skipvoters:
@@ -1142,6 +1174,10 @@ def download_ac_voters_data(args, district, ac, booth_data=None):
             return
 
         logger.info("Launching %d threads to process %d booths", args.threads, len(booth_data))
+
+        global SUCCESS_LIST, FAILED_LIST
+        SUCCESS_LIST=[]
+        FAILED_LIST=[]
 
         count=0
         with ThreadPoolExecutor(max_workers=args.threads) as executor:
@@ -1151,18 +1187,19 @@ def download_ac_voters_data(args, district, ac, booth_data=None):
                     break
                 if killThreads:
                     break
-                executor.submit(BoothsDataDownloader, args, district, ac, int(id))
+                executor.submit(DownloadVotersByBooth, args, district, ac, id)
                 count+=1
 
             for i in range(2):
-                if len(FAILED_BOOTHS) <= 0 or killThreads or args.limit > 0 and count >= args.limit:
+                if len(FAILED_LIST) <= 0 or killThreads or args.limit > 0 and count >= args.limit:
                     break
-                logger.info("========= PROCESSING FAILED BOOTHS (%d) =============", len(FAILED_BOOTHS))
+                logger.info("========= PROCESSING FAILED BOOTHS (%d) =============", len(FAILED_LIST))
                 with ThreadPoolExecutor(max_workers=args.threads) as executor:
-                    for id in FAILED_BOOTHS:
-                        if killThreads:
+                    for id in FAILED_LIST:
+                        if killThreads or args.limit > 0 and count >= args.limit:
                             break
-                        executor.submit(BoothsDataDownloader, args, district, ac, int(id))
+                        executor.submit(DownloadVotersByBooth, args, district, ac, id)
+                        count+=1
 
     except KeyboardInterrupt:
         logger.error("Keyboard interrupt received, killing it")
@@ -1171,7 +1208,11 @@ def download_ac_voters_data(args, district, ac, booth_data=None):
         logger.error(str(e))
         traceback.print_exc(file=sys.stdout)
 
-
+def add_remove_proxy(proxy):
+    if proxy and proxy['http'] in PROXY_LIST:
+        logger.info("Removing PROXY {}".format(proxy['http']))
+        PROXY_LIST.remove(proxy['http'])
+        logger.info(PROXY_LIST)
 #
 # Download booth data
 #
@@ -1180,12 +1221,15 @@ def download_booths_data(args, district, ac):
     global TOTAL_COUNT
     global PROXY_LIST
 
+    district=int(district)
+    ac=int(ac)
+
     try:
         if args.skipproxy:
             PROXY_LIST=[]
         else:
             logger.debug("Getting latest PROXY list")
-            proxy_list = ProxyList().get(limit=5)
+            proxy_list = ProxyList().get(limit=6)
             for proxy in proxy_list:
                 try:
                     p = {'http': proxy}
@@ -1211,25 +1255,27 @@ def download_booths_data(args, district, ac):
             logger.info("Using the supplied booths: {}".format(booth_data))
         else:
             if ac is None:
-                logger.info("Missing AC details, fetching AC names")
-                ac_data=BoothsDataDownloader(args, district).get_acs()
-                logger.debug(ac_data)
+                logger.info("[%d] Missing AC details, fetching AC names", district)
+                ac_data=DownloadACs(args, district)
+                if ac_data is None:
+                    logger.error("[%d] Failed to download AC data", district)
+                    return
                 acs=[ac['value'] for ac in ac_data]
-                logger.info(acs)
+                logger.info("[{}] ACS: {}".format(district, acs))
 
                 for ac in acs:
-                    download_ac_voters_data(args, district, int(ac))
+                    download_ac_voters_data(args, district, ac)
             else:
-                logger.info("Download the booth data for district %d, ac: %d", district, ac)
+                logger.info("[%d_%d] Download the booth data", district, ac)
                 booth_output_dir=args.output + "/" + str(district) + "_" + str(ac)
                 os.makedirs(booth_output_dir, exist_ok=True)
                 booth_file=args.output + "/" + str(district) + "_" + str(ac) + "/" +str( district) + "_" + str(ac) + "_booths.csv"
                 data=get_raw_key(booth_file)
                 if data and int(data) >= 0:
-                    logger.info("Booth data exists (%d booths), re-using it", int(data))
+                    logger.info("[%d_%d] Booth data exists (%d booths), re-using it", district, ac, int(data))
                     booth_data=range(1, int(data) + 1)
                 else:
-                    data=BoothsDataDownloader(args, district, ac).download()
+                    data=DownloadACBooths(args, district, ac)
                     #set_raw_key(booth_file, len(data))
                     booth_data=range(1, len(data) + 1)
                 download_ac_voters_data(args, district, ac, booth_data)
@@ -1325,69 +1371,6 @@ def process_input_file(input_file, args):
         return convert_image_file_to_text(args, input_file)
     logger.error("Un-supported input file format, exiting")
 
-
-def test():
-    last_lsn = 27
-    count = 0
-    prev_line = "1 UON 1884386 2 UON1886282 3 UON1 906486"
-    prev_line = "28 AP07048036035 1 29 UON1998699 30 AP070480054723"
-    prev_line = "25          UON1799347                                26          UON1806613                                27          UON1542274"
-    logger.info("LINE {}".format(prev_line))
-    if "          " in prev_line:
-        ids=prev_line.split("          ")
-        for i in range(1, len(ids)):
-            id=ids[i-1].strip()
-            if id.isnumeric():
-                logger.info("SNO: " + id)
-                logger.info("ID: " + ids[1].replace(" ","").strip())
-    else:
-        if "|" in prev_line:
-            ids = prev_line.split(" | ")
-        else:
-            ids = prev_line.split("          ")
-        logger.info("SPLIT LENGTH: {},  {}".format(len(ids), ids))
-        if len(ids) > 6:
-            logger.info("IDs length mismatch {}, {}".format(len(ids), ids))
-            for i in range(1, len(ids)):
-                id=ids[i-1].strip()
-                if id.isnumeric():
-                    logger.info("SNO: " + id)
-                    logger.info("ID: " + ids[1].replace(" ","").strip())
-            for i in range(1, 4):
-                id = get_id_between(prev_line, last_lsn + i, last_lsn + i + 1, "" if i == 1 else "          ")
-                logger.info("SNO: " + id[0])
-                logger.info("ID: " + id[1])
-                if id[2] is True:
-                    logger.warning(
-                        "Malformed record found for sequence {} at line {} ({})".format(last_lsn + i, 1, prev_line))
-        else:
-            count = 0
-            sno = None
-            iname = None
-            for id in ids:
-                id = id.strip()
-                if id and id != '':
-                    if not sno:
-                        if not id.isnumeric():
-                            logger.warning(
-                                "SNO is not numeric({}), assigning auto-increment value({}) at line {}".format(id,
-                                                                                                               last_lsn + count + 1,
-                                                                                                               lno))
-                            sno = str(last_lsn + count + 1)
-                            continue
-                        sno = id
-                        continue
-                    if id == 'APO':
-                        if not iname:
-                            iname = id
-                        continue
-                    if iname:
-                        id = str(iname + "" + id)
-                    logger.info("SNO: " + sno)
-                    logger.info("ID: " + id)
-                    sno = None
-                    iname = None
-                    count += 1
 #
 # process all arguments
 #
@@ -1417,6 +1400,7 @@ def handle_arguments(parser, args):
 if __name__ == "__main__":
     parser, args = init_options()
     logger.setLevel(logging.DEBUG) if args.debug else logger.setLevel(logging.INFO)
+
     if not args.skip_lookup_db:
         try:
             REDIS=redis.Redis(host='localhost')
@@ -1425,6 +1409,5 @@ if __name__ == "__main__":
             logger.error("Failed to connect to Redis, skipping the MD5 lookups")
             logger.error(str(e))
             REDIS=None
-    #test()
     handle_arguments(parser, args)
 
