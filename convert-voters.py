@@ -53,6 +53,7 @@ def init_options():
     parser.add_argument('--booths', dest='booths', type=str, action='store', default=None, help='Limit search to the specific booth IDs, separated by comma= (default None)')
     parser.add_argument('--threads', dest='threads', type=int, action='store', default=1, help='Max threads (default 1)')
     parser.add_argument('--dry-run', dest='dryrun', action='store_true', help='Dry run to test')
+    parser.add_argument('--skip-voters', dest='skipvoters', action='store_true', help='Skip voters data processing (limit to BOOTH details)')
     parser.add_argument('--skip-proxy', dest='skipproxy', action='store_true', help='Skip proxy to be used for requests')
     parser.add_argument('--skip-lookup-db', dest='skip_lookup_db', action='store_true', help='Skip using lookup DB for existing files')
     parser.add_argument('--limit', dest='limit', type=int, action='store', default=0, help='Limit total booths (default all booths)')
@@ -215,6 +216,8 @@ class ParseHtmlTableData:
                     if len(cell_values) != 3:
                         logger.warning("[{}_{}] MALFORMED RECORD {}".format(self.district,self.ac, cell_values))
                         continue
+                    cell_values.append(int(self.district))
+                    cell_values.append(int(self.ac))
                     data.append(cell_values)
 
         except KeyboardInterrupt:
@@ -253,6 +256,7 @@ DESKTOP_AGENTS = [
     'Windows NT 10.0; WOW64; rv:50.0'
 ]
 
+
 class BoothsDataDownloader:
     def __init__(self, args, district=None, ac=None, id=None):
         self.args=args
@@ -268,6 +272,91 @@ class BoothsDataDownloader:
                 logger.error("[%d_%d] Failed to process both voters data for booth ID %d", self.district, self.ac, id)
                 logger.error(str(e))
             return None
+
+    def get_acs(self):
+        global killThreads
+
+        try:
+            if killThreads:
+                return
+
+            self.session = requests.Session()
+            self.session.headers.update({'User-Agent': choice(DESKTOP_AGENTS),'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'})
+
+            url=None
+            if not args.skipproxy:
+                logger.info("[%d] Start downloading AC data %s", self.district, self.proxy['http'] if len(self.proxy) > 0 else "")
+                for i in range(len(PROXY_LIST)):
+                    url = self.__validate_proxy_get_request(self.proxy)
+                    if url or len(self.proxy) == 0 or len(PROXY_LIST) == 0:
+                        break
+                    self.proxy={'http': choice(PROXY_LIST)}
+            else:
+                logger.info("[%d] Start downloading AC data...", self.district)
+                url = self.__validate_non_proxy_get_request()
+
+            if url is None:
+                return None
+
+            soup = BeautifulSoup(url.text, "lxml")
+            view_state = ''
+            event_validation = ''
+
+            inputs = soup.findAll('input')
+            for input in inputs:
+                if input['name'] == '__EVENTVALIDATION':
+                    event_validation = input['value']
+                if input['name'] == '__VIEWSTATE':
+                    view_state = input['value']
+
+            baseData = {
+                  '__EVENTTARGET' : 'ddlDist',
+                  '__EVENTARGUMENT' : '',
+                  '__LASTFOCUS' : '',
+                  '__VIEWSTATE' : view_state,
+                  '__EVENTVALIDATION' : event_validation,
+                  'ddlDist': self.district,
+                  'ddlAC': 0
+            }
+            result = self.session.post(LOGIN_URL, data=baseData, proxies=self.proxy, timeout=240)
+            if not result or result.status_code != 200:
+                logger.error("Failed to login, code %d", result.status_code)
+                logger.error(result.reason)
+                if result and result.status_code >= 500:
+                    time.sleep(5)
+                return None
+
+            retryCount = 0
+            acList = []
+            global TOTAL_COUNT
+
+            while retryCount <= 5:
+                retryCount+=1
+
+                if not result or not result.text:
+                    return None
+
+                soup = BeautifulSoup(result.text, "lxml")
+                rows = soup.findAll('select', id='ddlAC')
+                for row in rows:
+                    acnames=row.findAll('option')
+                    for name in acnames:
+                        if name['value'] and int(name['value']) == 0:
+                            continue
+                        acList.append({'value' : name['value'], 'name': name.text.strip()})
+                break
+
+            if acList is None or len(acList) == 0:
+                logger.error("[%d] FAILED TO PROCESS", self.district)
+            return acList
+
+        except KeyboardInterrupt:
+            logger.error("Keyboard interrupt received, killing it")
+            killThreads = True
+            return
+        except Exception as e:
+            logger.error("[%d] Exception %s", self.district, str(e))
+            traceback.print_exc(file=sys.stdout)
 
     def download(self):
         global killThreads
@@ -340,10 +429,12 @@ class BoothsDataDownloader:
                         boothsList=data
                         logger.info("[%d_%d] Found %d booths", self.district, self.ac, len(data))
                         booth_file=args.output + "/" + str(self.district) + "_" + str(self.ac) + "/" +str( self.district) + "_" + str(self.ac) + "_booths.csv"
-                        with open(booth_file, 'w') as myfile:
-                            wr=csv.writer(myfile, quoting=csv.QUOTE_ALL)
-                            wr.writerow(['POLLING STATION NO','POLLING STATION NAME', 'POLLING STATTION LOCATION'])
-                            wr.writerows(data)
+
+                        os.makedirs(os.path.dirname(booth_file), exist_ok=True)
+
+                        col_order=['POLLING STATION NO','POLLING STATION NAME', 'POLLING STATTION LOCATION', 'DISTRICT', 'ASSEMBLY']
+                        data_frame=pd.DataFrame(data, columns=col_order)
+                        data_frame.to_csv(booth_file, index=False)
                         break
 
                 else:
@@ -1030,6 +1121,10 @@ def parse_voters_data(args, input_file):
         return False
 
 
+class ACDBoothDataDownloader:
+    def __init__(self, args, district, ac):
+        return BoothsDataDownloader(args, int(district), int(ac)).download()
+
 #
 # Download booth data
 #
@@ -1068,18 +1163,43 @@ def download_booths_data(args, district, ac):
             booth_data=args.booths.split(",")
             logger.info("Using the supplied booths: {}".format(booth_data))
         else:
-            logger.info("Download the booth data for district %d, ac: %d", district, ac)
-            booth_output_dir=args.output + "/" + str(district) + "_" + str(ac)
-            os.makedirs(booth_output_dir, exist_ok=True)
-            booth_file=args.output + "/" + str(district) + "_" + str(ac) + "/" +str( district) + "_" + str(ac) + "_booths.csv"
-            data=get_raw_key(booth_file)
-            if data and int(data) >= 0:
-                logger.info("Booth data exists (%d booths), re-using it", int(data))
-                booth_data=range(1, int(data) + 1)
+            if ac is None:
+                logger.info("Missing AC details, fetching AC names")
+                ac_data=BoothsDataDownloader(args, district).get_acs()
+                logger.debug(ac_data)
+                acs=[ac['value'] for ac in ac_data]
+                logger.info(acs)
+                logger.info("Launching %d threads to process %d ACS", args.threads, len(acs))
+                count=0
+                with ThreadPoolExecutor(max_workers=args.threads) as executor:
+                    for ac in acs:
+                        if args.limit > 0 and count >= args.limit:
+                            logger.info("[%d_%d] LIMIT %d reached, exiting...", district, ac, args.limit)
+                            break
+                        if killThreads:
+                            break
+                        executor.submit(ACDBoothDataDownloader, args, district, ac)
+                        count+=1
+
+                logger.info("Downloaded all booth details for district %d", int(district))
+                return
             else:
-                data=BoothsDataDownloader(args, district, ac).download()
-                #set_raw_key(booth_file, len(data))
-                booth_data=range(1, len(data) + 1)
+                logger.info("Download the booth data for district %d, ac: %d", district, ac)
+                booth_output_dir=args.output + "/" + str(district) + "_" + str(ac)
+                os.makedirs(booth_output_dir, exist_ok=True)
+                booth_file=args.output + "/" + str(district) + "_" + str(ac) + "/" +str( district) + "_" + str(ac) + "_booths.csv"
+                data=get_raw_key(booth_file)
+                if data and int(data) >= 0:
+                    logger.info("Booth data exists (%d booths), re-using it", int(data))
+                    booth_data=range(1, int(data) + 1)
+                else:
+                    data=BoothsDataDownloader(args, district, ac).download()
+                    #set_raw_key(booth_file, len(data))
+                    booth_data=range(1, len(data) + 1)
+
+        if args.skipvoters:
+            logger.info("VOTERS DATA is skipped due to --skipvoters, total booths: %d", len(booth_data))
+            return
 
         logger.info("Launching %d threads to process %d booths", args.threads, len(booth_data))
 
@@ -1272,7 +1392,7 @@ def handle_arguments(parser, args):
         input_file=args.input
         return process_input_file(input_file, args)
 
-    if input_file is None and not args.district or not args.ac:
+    if input_file is None and not args.district:
         logger.error("Missing input file or district/AC details")
         parser.print_usage()
         sys.exit(1)
