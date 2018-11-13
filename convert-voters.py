@@ -1158,6 +1158,11 @@ class DownloadVotersByBooth:
     def __init__(self, args, district, ac, id):
         return BoothsDataDownloader(args, int(district), int(ac)).get_booth_voters(int(id))
 
+class ProcessImageFile():
+    def __init__(self, args, file):
+        logger.info("Processing input file %s", file)
+        return convert_image_file_to_text(args, file)
+
 def download_ac_voters_data(args, district, ac, booth_data=None):
     global killThreads
 
@@ -1385,7 +1390,7 @@ def process_input_file(input_file, args):
                     break
                 if killThreads:
                     break
-                executor.submit(convert_image_file_to_text, args, file)
+                executor.submit(ProcessImageFile, args, file)
                 count+=1
         return
     logger.error("Un-supported input file format, exiting")
