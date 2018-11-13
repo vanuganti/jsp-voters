@@ -694,437 +694,446 @@ def remove_special_chars(str):
         return n.strip()
     return str
 
-def parse_voters_data(args, input_file):
-    if not input_file:
-        logger.error("Missing input file, returning")
-        return False
 
-    try:
-        logger.info("Converting INPUT TEXT FILE %s ", input_file)
-        file=open(input_file, "r")
-    except IOError as e:
-        logger.error("Failed to OPEN INPUT FILE %s", input_file)
-        logger.error(str(e))
-        return False
+class ProcessTextFile():
+    def __init__(self, args, file):
+        self.args=args
+        self.input_file=file
 
-    metadata={}
-    voters=[]
-    malformed=[]
-    lno=0
-    prev_line=None
-    voter={}
-    booth_name_matched=False
-    last_lsn=0
-    last_processed_ids=None
-    area_name=None
-    last_area_name=None
-    last_processed_lno=0
-    last_match=None
-    area_names=[]
-    metadata['BOOTH']=""
-    metadata['PAGES']=2
-    metadata['ASSEMBLY']=""
-    assembly_matched=False
-    try:
-        for line in file:
-            lno+=1
-            sline=line.strip()
-            if sline and len(sline) > 0:
-                if "Contd..." in sline:
-                    last_area_name=area_name
-                    area_name=sline.replace("Contd...","").strip()
-                    if last_area_name is None:
+    def run(self):
+        return self.__parse_voters_data(self.args, self.input_file)
+
+    def __parse_voters_data(self, args, input_file):
+        if not input_file:
+            logger.error("Missing input file, returning")
+            return False
+
+        try:
+            logger.info("Converting INPUT TEXT FILE %s ", input_file)
+            file=open(input_file, "r")
+        except IOError as e:
+            logger.error("Failed to OPEN INPUT FILE %s", input_file)
+            logger.error(str(e))
+            return False
+
+        metadata={}
+        voters=[]
+        malformed=[]
+        lno=0
+        prev_line=None
+        voter={}
+        booth_name_matched=False
+        last_lsn=0
+        last_processed_ids=None
+        area_name=None
+        last_area_name=None
+        last_processed_lno=0
+        last_match=None
+        area_names=[]
+        metadata['BOOTH']=""
+        metadata['PAGES']=2
+        metadata['ASSEMBLY']=""
+        assembly_matched=False
+        try:
+            for line in file:
+                lno+=1
+                sline=line.strip()
+                if sline and len(sline) > 0:
+                    if "Contd..." in sline:
                         last_area_name=area_name
-                    if area_name not in area_names:
-                        area_names.append(area_name)
-                    metadata['PAGES']+=1
-                    continue
-
-                if metadata['PAGES'] == 2:
-                    if "Name and Reservation Status of Parliamentary" in sline:
-                        assembly_matched=False
-                        try:
-                            names=sline.split("  ")
-                            a_name=""
-                            for name in names[1:]:
-                                n=name.strip()
-                                if n and n!='':
-                                    a_name += n + " "
-                            metadata['PARLIAMENT']=a_name.replace("  ","").strip()
-                        except Exception:
-                            metadata['PARLIAMENT']=""
+                        area_name=sline.replace("Contd...","").strip()
+                        if last_area_name is None:
+                            last_area_name=area_name
+                        if area_name not in area_names:
+                            area_names.append(area_name)
+                        metadata['PAGES']+=1
                         continue
 
-                    if "State - Andhra Pradesh" in sline:
-                        assembly_matched=True
-                        continue
+                    if metadata['PAGES'] == 2:
+                        if "Name and Reservation Status of Parliamentary" in sline:
+                            assembly_matched=False
+                            try:
+                                names=sline.split("  ")
+                                a_name=""
+                                for name in names[1:]:
+                                    n=name.strip()
+                                    if n and n!='':
+                                        a_name += n + " "
+                                metadata['PARLIAMENT']=a_name.replace("  ","").strip()
+                            except Exception:
+                                metadata['PARLIAMENT']=""
+                            continue
 
-                    if "Name and Reservation Status of" in sline:
-                        assembly_matched=False
-                        continue
+                        if "State - Andhra Pradesh" in sline:
+                            assembly_matched=True
+                            continue
 
-                    if assembly_matched:
-                        metadata['ASSEMBLY']+=sline.strip()
-                        continue
+                        if "Name and Reservation Status of" in sline:
+                            assembly_matched=False
+                            continue
 
-                    if "Assembly Constituency :" in sline:
-                        try:
-                            names=sline.split(":")[1].strip().split(" ")
+                        if assembly_matched:
+                            metadata['ASSEMBLY']+=sline.strip()
+                            continue
+
+                        if "Assembly Constituency :" in sline:
+                            try:
+                                names=sline.split(":")[1].strip().split(" ")
+                                for name in names:
+                                    n=name.strip()
+                                    if n and n != "":
+                                        metadata['ASSEMBLY TYPE']=n
+                                        break
+                            except Exception:
+                                metadata['ASSEMBLY TYPE']=""
+                            continue
+
+                        if "in which Assembly Constituency" in sline:
+                            try:
+                                metadata['PARLIAMENT TYPE']=sline.split(":")[1].strip()
+                            except Exception:
+                                metadata['PARLIAMENT TYPE']=""
+                            continue
+
+                        if "Address of Polling Station" in sline:
+                            booth_name_matched=True
+                            continue
+
+                        if "NUMBER OF ELECTORS" in sline:
+                            booth_name_matched=False
+                            continue
+
+                        if booth_name_matched:
+                            if len(metadata['BOOTH']) >0:
+                                metadata['BOOTH']+= "\n"
+                            metadata['BOOTH']+=sline.strip()
+                            continue
+
+                        if "Main Town " in sline:
+                            try:
+                                names=re.split("Main Town [:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
+                                metadata['MAIN TOWN']=remove_special_chars(names[1].strip())
+                            except Exception:
+                                metadata['MAIN TOWN']=""
+                            continue
+
+                        if "Police Station " in sline:
+                            try:
+                                names=re.split("Police Station [:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
+                                metadata['POLICE STATION']=remove_special_chars(names[1].strip())
+                            except Exception:
+                                metadata['POLICE STATION']=""
+                            continue
+
+                        if "Mandal " in sline:
+                            try:
+                                names=re.split("Mandal [:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
+                                metadata['MANDAL']=remove_special_chars(names[1].strip())
+                            except Exception:
+                                metadata['MANDAL']=""
+                            continue
+
+                        if "District " in sline:
+                            try:
+                                names=re.split("District [:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
+                                metadata['DISTRICT']=remove_special_chars(names[1].strip())
+                            except Exception:
+                                metadata['DISTRICT']=""
+                            continue
+
+                        if "Pin Code " in sline:
+                            try:
+                                names=re.split("Pin Code ?[:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
+                                if len(names) > 1 and names[1] and names[1] != '':
+                                    metadata['PINCODE']=names[1].strip()
+                                else:
+                                    names=re.split("Pin Code ", re.sub(' +',' ',sline).strip())
+                                    metadata['PINCODE']=remove_special_chars(names[1].strip())
+                            except Exception:
+                                metadata['PINCODE']=""
+                            continue
+
+                    if "Elector's Name" in sline or "Elector Name" in sline or "Electors Name" in sline or "Elector’s Name" in sline:
+                        if len(voter) > 0:
+                            for v in voter:
+                                data=voter[v]
+                                if len(data)  != 7:
+                                    logger.error("ERROR records found at line {} for IDS {}".format(last_processed_lno-1, last_processed_ids))
+                                    logger.error("ERROR RECORD: {}".format(data))
+                                    logger.info(voter)
+                                    logger.info("CURRENT LINE {} : {}, PREVIOUS LINE ".format(lno, sline, prev_line))
+                                    return
+                                try:
+                                    lsn=int(voter[v][0]['SNO'])
+                                    if lsn > last_lsn:
+                                        last_lsn=lsn
+                                except Exception as e:
+                                    last_lsn+=1
+                                    pass
+                                data.update({"AREA": last_area_name})
+                                voters.append(data)
+                            voter={}
+                        last_match='NAME'
+                        names=re.split("Elector’s Name:|Elector Name[:;]|Electors Name[:;]|Elector's Name[:;]|Elector’s Name[:;]", sline)
+                        if "       " in prev_line:
+                            ids=prev_line.split("       ")
+                            logger.debug("IDS with spaces {}".format(ids))
+                            count=0
+                            found_sno=None
+                            found_id=None
+                            for i in range(0, len(ids)):
+                                id=ids[i].strip()
+                                if len(id) > 0:
+                                    if id.isnumeric():
+                                        logger.debug("Found SNO %s at %d", id, i)
+                                        found_sno=id
+                                        continue
+                                    else:
+                                        if found_sno:
+                                            logger.debug("Found ID %s at %d", id, i)
+                                            found_id=id.replace(" ","")
+                                        else:
+                                            logger.debug("MISSING ID FOUND %s at %d, matched %d", id, i, last_lsn+count+1)
+                                            found_sno=last_lsn+count+1
+                                    if found_sno and found_id:
+                                        logger.debug("Assing ids: {}:{}".format(found_sno, found_id))
+                                        voter.setdefault(count,{}).update(SNO=int(found_sno))
+                                        voter.setdefault(count,{}).update(ID=found_id)
+                                        count+=1
+                                        found_sno=None
+                                        found_id=None
+                        else:
+                            ids=prev_line.split(" ")
+                            if len(ids) > 6:
+                                logger.debug("IDs length mismatch {}, {}".format(len(ids), ids))
+                                for i in range(1,4):
+                                    id=get_id_between(prev_line, last_lsn+i, last_lsn+i+1, "" if i == 1 else " ")
+                                    voter.setdefault(i-1,{}).update(SNO=int(id[0]))
+                                    voter.setdefault(i-1,{}).update(ID=id[1])
+                                    if id[2] is True:
+                                       logger.warning("Malformed record found for sequence {} at line {} ({})".format(last_lsn+i, lno, prev_line))
+                                       malformed.append({ "LINE " + str(lno).rjust(4) : "For Sequence " + str(last_lsn+i).rjust(4) + " => " + prev_line})
+                            else:
+                                count=0
+                                sno=None
+                                iname=None
+                                for id in ids:
+                                    id=id.strip()
+                                    if id and id != '':
+                                        if not sno:
+                                            if not id.isnumeric():
+                                                logger.warning("SNO is not numeric({}), assigning auto-increment value({}) at line {}".format(id, last_lsn+count+1, lno))
+                                                sno=str(last_lsn+count+1)
+                                                continue
+                                            sno=id
+                                            continue
+                                        if id == 'APO':
+                                            if not iname:
+                                                iname=id
+                                            continue
+                                        if iname:
+                                            id=str(iname+""+id)
+                                        voter.setdefault(count,{}).update(SNO=int(sno))
+                                        voter.setdefault(count,{}).update(ID=id)
+                                        sno=None
+                                        iname=None
+                                        count+=1
+
+                        count=0
+                        last_processed_ids=prev_line
+                        last_processed_lno=lno
+                        for name in names:
+                            n=remove_special_chars(name)
+                            if n and n != '':
+                                voter.setdefault(count,{}).update(NAME=n)
+                                count+=1
+                        if count < len(voter):
+                            logger.debug("Problem with matching the NAMES (found %d records for %d) for line %s, manually parsing", count, len(voter), sline)
+                            names=re.split("                               ", sline)
+                            count=0
                             for name in names:
                                 n=name.strip()
-                                if n and n != "":
-                                    metadata['ASSEMBLY TYPE']=n
-                                    break
-                        except Exception:
-                            metadata['ASSEMBLY TYPE']=""
-                        continue
-
-                    if "in which Assembly Constituency" in sline:
-                        try:
-                            metadata['PARLIAMENT TYPE']=sline.split(":")[1].strip()
-                        except Exception:
-                            metadata['PARLIAMENT TYPE']=""
-                        continue
-
-                    if "Address of Polling Station" in sline:
-                        booth_name_matched=True
-                        continue
-
-                    if "NUMBER OF ELECTORS" in sline:
-                        booth_name_matched=False
-                        continue
-
-                    if booth_name_matched:
-                        if len(metadata['BOOTH']) >0:
-                            metadata['BOOTH']+= "\n"
-                        metadata['BOOTH']+=sline.strip()
-                        continue
-
-                    if "Main Town " in sline:
-                        try:
-                            names=re.split("Main Town [:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
-                            metadata['MAIN TOWN']=remove_special_chars(names[1].strip())
-                        except Exception:
-                            metadata['MAIN TOWN']=""
-                        continue
-
-                    if "Police Station " in sline:
-                        try:
-                            names=re.split("Police Station [:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
-                            metadata['POLICE STATION']=remove_special_chars(names[1].strip())
-                        except Exception:
-                            metadata['POLICE STATION']=""
-                        continue
-
-                    if "Mandal " in sline:
-                        try:
-                            names=re.split("Mandal [:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
-                            metadata['MANDAL']=remove_special_chars(names[1].strip())
-                        except Exception:
-                            metadata['MANDAL']=""
-                        continue
-
-                    if "District " in sline:
-                        try:
-                            names=re.split("District [:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
-                            metadata['DISTRICT']=remove_special_chars(names[1].strip())
-                        except Exception:
-                            metadata['DISTRICT']=""
-                        continue
-
-                    if "Pin Code " in sline:
-                        try:
-                            names=re.split("Pin Code ?[:;\.\-\|\>]", re.sub(' +',' ',sline).strip())
-                            if len(names) > 1 and names[1] and names[1] != '':
-                                metadata['PINCODE']=names[1].strip()
-                            else:
-                                names=re.split("Pin Code ", re.sub(' +',' ',sline).strip())
-                                metadata['PINCODE']=remove_special_chars(names[1].strip())
-                        except Exception:
-                            metadata['PINCODE']=""
-                        continue
-
-                if "Elector's Name" in sline or "Elector Name" in sline or "Electors Name" in sline or "Elector’s Name" in sline:
-                    if len(voter) > 0:
-                        for v in voter:
-                            data=voter[v]
-                            if len(data)  != 7:
-                                logger.error("ERROR records found at line {} for IDS {}".format(last_processed_lno-1, last_processed_ids))
-                                logger.error("ERROR RECORD: {}".format(data))
-                                logger.info(voter)
-                                logger.info("CURRENT LINE {} : {}, PREVIOUS LINE ".format(lno, sline, prev_line))
-                                return
-                            try:
-                                lsn=int(voter[v][0]['SNO'])
-                                if lsn > last_lsn:
-                                    last_lsn=lsn
-                            except Exception as e:
-                                last_lsn+=1
-                                pass
-                            data.update({"AREA": last_area_name})
-                            voters.append(data)
-                        voter={}
-                    last_match='NAME'
-                    names=re.split("Elector’s Name:|Elector Name[:;]|Electors Name[:;]|Elector's Name[:;]|Elector’s Name[:;]", sline)
-                    if "       " in prev_line:
-                        ids=prev_line.split("       ")
-                        logger.debug("IDS with spaces {}".format(ids))
-                        count=0
-                        found_sno=None
-                        found_id=None
-                        for i in range(0, len(ids)):
-                            id=ids[i].strip()
-                            if len(id) > 0:
-                                if id.isnumeric():
-                                    logger.debug("Found SNO %s at %d", id, i)
-                                    found_sno=id
-                                    continue
-                                else:
-                                    if found_sno:
-                                        logger.debug("Found ID %s at %d", id, i)
-                                        found_id=id.replace(" ","")
-                                    else:
-                                        logger.debug("MISSING ID FOUND %s at %d, matched %d", id, i, last_lsn+count+1)
-                                        found_sno=last_lsn+count+1
-                                if found_sno and found_id:
-                                    logger.debug("Assing ids: {}:{}".format(found_sno, found_id))
-                                    voter.setdefault(count,{}).update(SNO=int(found_sno))
-                                    voter.setdefault(count,{}).update(ID=found_id)
+                                if n and n != '':
+                                    logger.debug(re.split(":|;", n))
+                                    try:
+                                        nn=re.split(":|;", n)
+                                        voter.setdefault(count,{}).update(NAME=nn[1].strip())
+                                    except Exception:
+                                        voter.setdefault(count,{}).update(NAME=nn[0].strip())
+                                        pass
+                                    logger.debug(voter[count]["FS_NAME"])
                                     count+=1
-                                    found_sno=None
-                                    found_id=None
-                    else:
-                        ids=prev_line.split(" ")
-                        if len(ids) > 6:
-                            logger.debug("IDs length mismatch {}, {}".format(len(ids), ids))
-                            for i in range(1,4):
-                                id=get_id_between(prev_line, last_lsn+i, last_lsn+i+1, "" if i == 1 else " ")
-                                voter.setdefault(i-1,{}).update(SNO=int(id[0]))
-                                voter.setdefault(i-1,{}).update(ID=id[1])
-                                if id[2] is True:
-                                   logger.warning("Malformed record found for sequence {} at line {} ({})".format(last_lsn+i, lno, prev_line))
-                                   malformed.append({ "LINE " + str(lno).rjust(4) : "For Sequence " + str(last_lsn+i).rjust(4) + " => " + prev_line})
-                        else:
+                        continue
+                    if "Husband's Name" in sline or "Father's Name" in sline or "Husband" in sline or "Father" in sline or "Mother's Name" in sline or "Mother" in sline or "Other's Name" in sline or "Others Name" in sline or "Other Name" in sline:
+                        last_match='FS_NAME'
+                        names=re.split("Husband's Name[:;]|Husband Name[:;]|Husbands Name[:;]|Father's Name[:;]|Father Name[:;]|Fathers Name[:;]|Mothers Name[:;]|Mother Name[:;]|Mother's Name[:;]|Mother’s Name[:;]|Father's Name[;:]|Others Name[:;]|Other Name[:;]|Other's Name[:;]", sline)
+                        count=0
+                        logger.debug(names)
+                        for name in names:
+                            n=remove_special_chars(name)
+                            if n and n != '':
+                                voter.setdefault(count,{}).update(FS_NAME=n)
+                                count+=1
+                        if count < len(voter):
+                            logger.debug("Problem with matching the FNAMES (found %d records for %d) for line %s, manually parsing", count, len(voter), sline)
+                            names=re.split("                               ", sline)
                             count=0
-                            sno=None
-                            iname=None
-                            for id in ids:
-                                id=id.strip()
-                                if id and id != '':
-                                    if not sno:
-                                        if not id.isnumeric():
-                                            logger.warning("SNO is not numeric({}), assigning auto-increment value({}) at line {}".format(id, last_lsn+count+1, lno))
-                                            sno=str(last_lsn+count+1)
-                                            continue
-                                        sno=id
-                                        continue
-                                    if id == 'APO':
-                                        if not iname:
-                                            iname=id
-                                        continue
-                                    if iname:
-                                        id=str(iname+""+id)
-                                    voter.setdefault(count,{}).update(SNO=int(sno))
-                                    voter.setdefault(count,{}).update(ID=id)
-                                    sno=None
-                                    iname=None
+                            for name in names:
+                                n=name.strip()
+                                if n and n != '':
+                                    logger.debug(re.split(":|;", n))
+                                    try:
+                                        nn=re.split(":|;", n)
+                                        voter.setdefault(count,{}).update(FS_NAME=nn[1].strip())
+                                    except Exception:
+                                        voter.setdefault(count,{}).update(FS_NAME=nn[0].strip())
+                                        pass
+                                    logger.debug(voter[count]["FS_NAME"])
                                     count+=1
 
-                    count=0
-                    last_processed_ids=prev_line
-                    last_processed_lno=lno
-                    for name in names:
-                        n=remove_special_chars(name)
-                        if n and n != '':
-                            voter.setdefault(count,{}).update(NAME=n)
-                            count+=1
-                    if count < len(voter):
-                        logger.debug("Problem with matching the NAMES (found %d records for %d) for line %s, manually parsing", count, len(voter), sline)
-                        names=re.split("                               ", sline)
+                        continue
+                    if "House No" in sline or "House" in sline:
+                        last_match='HNO'
+                        names=re.split("House No[:;]", sline)
+                        count=0
+                        logger.debug(names)
+                        for name in names:
+                            n=name.strip()
+                            logger.debug(n)
+                            if n and n != '':
+                                voter.setdefault(count,{}).update(HNO=n)
+                                count+=1
+                        if count < len(voter):
+                            logger.debug("Problem with matching the HNO (found %d records for %d) for line %s, manually parsing", count, len(voter), sline)
+                            names=re.split("  ", sline)
+                            count=0
+                            for name in names:
+                                n=name.strip()
+                                if n and 'House' in name:
+                                    try:
+                                        nn=re.split(":|;", n)
+                                        voter.setdefault(count,{}).update(HNO=nn[1].strip())
+                                    except Exception:
+                                        voter.setdefault(count,{}).update(HNO='')
+                                        pass
+                                    logger.debug(voter[count]["HNO"])
+                                    count+=1
+                        continue
+                    if "Age" in sline and "Sex" in sline:
+                        names=sline.split(" ")
+                        logger.debug(names)
+                        l=len(names)
+                        count=0
+                        age=None
+                        sex=None
+                        for index, obj in enumerate(names):
+                            obj=obj.strip()
+                            if "Age" in obj:
+                                try:
+                                    c=index+1
+                                    age=""
+                                    while True:
+                                        age=names[c].strip()
+                                        if age and age != '':
+                                            break
+                                        c+=1
+                                    age=re.sub("[^0-9]", "", age)
+                                    voter.setdefault(count,{}).update(AGE=int(age))
+                                except Exception:
+                                    age=''
+                                    voter.setdefault(count,{}).update(AGE=0)
+                                    pass
+                            elif "Sex" in obj:
+                                try:
+                                    c=index+1
+                                    sex=""
+                                    while True:
+                                        sex=names[c].strip()
+                                        if sex and sex != '':
+                                            break
+                                        c+=1
+                                    voter.setdefault(count,{}).update(SEX=sex)
+                                except Exception:
+                                    sex=''
+                                    voter.setdefault(count,{}).update(SEX=sex)
+                                    pass
+                            if age and sex:
+                                logger.debug(voter[count])
+                                count+=1
+                                age=None
+                                sex=None
+                        continue
+                    if last_match == 'NAME' or last_match == 'FS_NAME':
+                        names=sline.split("                      ")
+                        logger.debug("Last matched name {}, ids: {}".format(last_match, names))
                         count=0
                         for name in names:
                             n=name.strip()
                             if n and n != '':
-                                logger.debug(re.split(":|;", n))
-                                try:
-                                    nn=re.split(":|;", n)
-                                    voter.setdefault(count,{}).update(NAME=nn[1].strip())
-                                except Exception:
-                                    voter.setdefault(count,{}).update(NAME=nn[0].strip())
-                                    pass
-                                logger.debug(voter[count]["FS_NAME"])
+                                v_name=voter[count][last_match]
+                                v_name += " " + remove_special_chars(n)
+                                voter[count][last_match]=v_name
                                 count+=1
-                    continue
-                if "Husband's Name" in sline or "Father's Name" in sline or "Husband" in sline or "Father" in sline or "Mother's Name" in sline or "Mother" in sline or "Other's Name" in sline or "Others Name" in sline or "Other Name" in sline:
-                    last_match='FS_NAME'
-                    names=re.split("Husband's Name[:;]|Husband Name[:;]|Husbands Name[:;]|Father's Name[:;]|Father Name[:;]|Fathers Name[:;]|Mothers Name[:;]|Mother Name[:;]|Mother's Name[:;]|Mother’s Name[:;]|Father's Name[;:]|Others Name[:;]|Other Name[:;]|Other's Name[:;]", sline)
-                    count=0
-                    logger.debug(names)
-                    for name in names:
-                        n=remove_special_chars(name)
-                        if n and n != '':
-                            voter.setdefault(count,{}).update(FS_NAME=n)
-                            count+=1
-                    if count < len(voter):
-                        logger.debug("Problem with matching the FNAMES (found %d records for %d) for line %s, manually parsing", count, len(voter), sline)
-                        names=re.split("                               ", sline)
-                        count=0
-                        for name in names:
-                            n=name.strip()
-                            if n and n != '':
-                                logger.debug(re.split(":|;", n))
-                                try:
-                                    nn=re.split(":|;", n)
-                                    voter.setdefault(count,{}).update(FS_NAME=nn[1].strip())
-                                except Exception:
-                                    voter.setdefault(count,{}).update(FS_NAME=nn[0].strip())
-                                    pass
-                                logger.debug(voter[count]["FS_NAME"])
-                                count+=1
+                    prev_line=sline
 
-                    continue
-                if "House No" in sline or "House" in sline:
-                    last_match='HNO'
-                    names=re.split("House No[:;]", sline)
-                    count=0
-                    logger.debug(names)
-                    for name in names:
-                        n=name.strip()
-                        logger.debug(n)
-                        if n and n != '':
-                            voter.setdefault(count,{}).update(HNO=n)
-                            count+=1
-                    if count < len(voter):
-                        logger.debug("Problem with matching the HNO (found %d records for %d) for line %s, manually parsing", count, len(voter), sline)
-                        names=re.split("  ", sline)
-                        count=0
-                        for name in names:
-                            n=name.strip()
-                            if n and 'House' in name:
-                                try:
-                                    nn=re.split(":|;", n)
-                                    voter.setdefault(count,{}).update(HNO=nn[1].strip())
-                                except Exception:
-                                    voter.setdefault(count,{}).update(HNO='')
-                                    pass
-                                logger.debug(voter[count]["HNO"])
-                                count+=1
-                    continue
-                if "Age" in sline and "Sex" in sline:
-                    names=sline.split(" ")
-                    logger.debug(names)
-                    l=len(names)
-                    count=0
-                    age=None
-                    sex=None
-                    for index, obj in enumerate(names):
-                        obj=obj.strip()
-                        if "Age" in obj:
-                            try:
-                                c=index+1
-                                age=""
-                                while True:
-                                    age=names[c].strip()
-                                    if age and age != '':
-                                        break
-                                    c+=1
-                                age=re.sub("[^0-9]", "", age)
-                                voter.setdefault(count,{}).update(AGE=int(age))
-                            except Exception:
-                                age=''
-                                voter.setdefault(count,{}).update(AGE=0)
-                                pass
-                        elif "Sex" in obj:
-                            try:
-                                c=index+1
-                                sex=""
-                                while True:
-                                    sex=names[c].strip()
-                                    if sex and sex != '':
-                                        break
-                                    c+=1
-                                voter.setdefault(count,{}).update(SEX=sex)
-                            except Exception:
-                                sex=''
-                                voter.setdefault(count,{}).update(SEX=sex)
-                                pass
-                        if age and sex:
-                            logger.debug(voter[count])
-                            count+=1
-                            age=None
-                            sex=None
-                    continue
-                if last_match == 'NAME' or last_match == 'FS_NAME':
-                    names=sline.split("                      ")
-                    logger.debug("Last matched name {}, ids: {}".format(last_match, names))
-                    count=0
-                    for name in names:
-                        n=name.strip()
-                        if n and n != '':
-                            v_name=voter[count][last_match]
-                            v_name += " " + remove_special_chars(n)
-                            voter[count][last_match]=v_name
-                            count+=1
-                prev_line=sline
+            if len(voter) != 0:
+                for v in voter:
+                    data=voter[v]
+                    data.update({"AREA": last_area_name})
+                    voters.append(data)
 
-        if len(voter) != 0:
-            for v in voter:
-                data=voter[v]
-                data.update({"AREA": last_area_name})
-                voters.append(data)
+            logger.debug("Malformed records:")
+            for x in malformed:
+                logger.debug("  {}".format(x))
 
-        logger.debug("Malformed records:")
-        for x in malformed:
-            logger.debug("  {}".format(x))
+            metadata['BOOTH']=re.sub("Number of Auxillary Polling|Stations in this Part:|  ","",metadata['BOOTH'].replace("\n",",").strip()).strip()
+            if len(voters) > 0:
+                try:
+                    col_order=['SNO','ID','NAME','FS_NAME','HNO','AGE','SEX','AREA']
+                    data_frame=pd.DataFrame(voters, columns=col_order)
+                    if args.csv:
+                        outfile=os.path.basename(input_file).split(".")[0] + ".csv" if input_file else "output.csv"
+                        if args.output:
+                            outfile=args.output + "/" + outfile
+                        data_frame.to_csv(outfile, index=False)
+                        logger.debug("CSV Output is saved in %s file", outfile)
 
-        metadata['BOOTH']=re.sub("Number of Auxillary Polling|Stations in this Part:|  ","",metadata['BOOTH'].replace("\n",",").strip()).strip()
-        if len(voters) > 0:
-            try:
-                col_order=['SNO','ID','NAME','FS_NAME','HNO','AGE','SEX','AREA']
-                data_frame=pd.DataFrame(voters, columns=col_order)
-                if args.csv:
-                    outfile=os.path.basename(input_file).split(".")[0] + ".csv" if input_file else "output.csv"
-                    if args.output:
-                        outfile=args.output + "/" + outfile
-                    data_frame.to_csv(outfile, index=False)
-                    logger.debug("CSV Output is saved in %s file", outfile)
+                    if args.xls:
+                        outfile=os.path.basename(input_file).split(".")[0] + ".xlsx" if input_file else "output.xlsx"
+                        if args.output:
+                            outfile=args.output + "/" + outfile
 
-                if args.xls:
-                    outfile=os.path.basename(input_file).split(".")[0] + ".xlsx" if input_file else "output.xlsx"
-                    if args.output:
-                        outfile=args.output + "/" + outfile
+                        writer = pd.ExcelWriter(outfile, engine='xlsxwriter')
+                        for key,value in data_frame['SEX'].value_counts().iteritems():
+                            metadata[key.upper()]=value
+                        metadata['TOTAL']=len(voters)
+                        details=pd.DataFrame(metadata, index=[0]).T
+                        details.to_excel(writer, 'DETAILS')
+                        data_frame.to_excel(writer, 'VOTERS DATA', index=False)
+                        writer.save()
+                        logger.debug("XLS Output is saved in %s file", outfile)
 
-                    writer = pd.ExcelWriter(outfile, engine='xlsxwriter')
-                    for key,value in data_frame['SEX'].value_counts().iteritems():
-                        metadata[key.upper()]=value
-                    metadata['TOTAL']=len(voters)
-                    details=pd.DataFrame(metadata, index=[0]).T
-                    details.to_excel(writer, 'DETAILS')
-                    data_frame.to_excel(writer, 'VOTERS DATA', index=False)
-                    writer.save()
-                    logger.debug("XLS Output is saved in %s file", outfile)
+                    if not args.csv and not args.xls:
+                        logger.info("No output file supplied, printing to STDOUT")
+                        print("\nOUTPUT RECORDS: \n\n")
+                        for voter in voters:
+                            print(voter)
+                        print("\n\n")
+                except Exception as e:
+                    logger.error("Exception when writing output")
+                    logger.error(e, exc_info=True)
 
-                if not args.csv and not args.xls:
-                    logger.info("No output file supplied, printing to STDOUT")
-                    print("\nOUTPUT RECORDS: \n\n")
-                    for voter in voters:
-                        print(voter)
-                    print("\n\n")
-            except Exception as e:
-                logger.error("Exception when writing output")
-                logger.error(e, exc_info=True)
+            logger.info("---------------- S U M M A R Y ----------------------")
+            logger.info("Total records: %d, malformed: %d, areas: %d, pages: %d", len(voters), len(malformed), len(area_names), metadata['PAGES'])
+            logger.info("{}".format(metadata))
+            logger.info("CONVERSION DONE")
+            return len(voters) > 0
 
-        logger.info("---------------- S U M M A R Y ----------------------")
-        logger.info("Total records: %d, malformed: %d, areas: %d, pages: %d", len(voters), len(malformed), len(area_names), metadata['PAGES'])
-        logger.info("{}".format(metadata))
-        logger.info("CONVERSION DONE")
-        return len(voters) > 0
-
-    except Exception as e:
-        logger.error("Exception in the line '{}': {}".format(lno, sline))
-        logger.error(voter)
-        logger.error(e, exc_info=True)
-        return False
+        except Exception as e:
+            logger.error("Exception in the line '{}': {}".format(lno, sline))
+            logger.error(voter)
+            logger.error(e, exc_info=True)
+            return False
 
 def add_to_failed_list(booth_id):
     try:
@@ -1157,11 +1166,6 @@ class DownloadACBooths:
 class DownloadVotersByBooth:
     def __init__(self, args, district, ac, id):
         return BoothsDataDownloader(args, int(district), int(ac)).get_booth_voters(int(id))
-
-class ProcessImageFile():
-    def __init__(self, args, file):
-        logger.info("Processing input file %s", file)
-        return convert_image_file_to_text(args, file)
 
 def download_ac_voters_data(args, district, ac, booth_data=None):
     global killThreads
@@ -1342,27 +1346,30 @@ def set_raw_key(key, value):
         return REDIS.set("RAW-"+hashlib.md5(key.encode('utf-8')).hexdigest(), value)
     return None
 
-#
-# convert image to text
-#
-def convert_image_file_to_text(args, input_file):
-    if not os.path.isfile(input_file):
-        logger.error("Input file " + input_file + " does not exists, exiting...")
-        sys.exit(1)
+class ProcessImageFile():
+    def __init__(self, args, file):
+        self.args=args
+        self.file=file
+        logger.info("Processing IMAGE file %s", file)
 
-    files=os.path.basename(input_file).split(".")
-    tiff_file=args.output + "/" + os.path.basename(input_file).replace(files[len(files)-1],'tiff')
-    logger.debug("Converting IMAGE to TEXT ...")
-    command="gs -dSAFER -dBATCH -dNOPAUSE -r300 -q -sDEVICE=tiffg4 -sOutputFile='" + tiff_file + "' '" + input_file + "'"
-    logger.debug(command)
-    os.system(command)
-    text_file=tiff_file.replace(".tiff", "")
-    logger.info("Converting IMAGE to TEXT file (Will take few minutes depending on the size)...")
-    command="tesseract '" + tiff_file + "' '" + text_file + "' --psm 6 -l eng -c preserve_interword_spaces=1"
-    logger.debug(command)
-    os.system(command)
-    return parse_voters_data(args, text_file + ".txt")
+    def run(self):
+        if not os.path.isfile(self.file):
+            logger.error("Input file " + self.file + " does not exists, exiting...")
+            sys.exit(1)
 
+        files=os.path.basename(self.file).split(".")
+        tiff_file=self.args.output + "/" + os.path.basename(self.file).replace(files[len(files)-1],'tiff')
+        logger.debug("Converting IMAGE to TEXT ...")
+        command="gs -dSAFER -dBATCH -dNOPAUSE -r300 -q -sDEVICE=tiffg4 -sOutputFile='" + tiff_file + "' '" + self.file + "'"
+        logger.debug(command)
+        os.system(command)
+        text_file=tiff_file.replace(".tiff", "")
+        logger.info("Converting IMAGE to TEXT file (Will take few minutes depending on the size)...")
+        command="tesseract '" + tiff_file + "' '" + text_file + "' --psm 6 -l eng -c preserve_interword_spaces=1"
+        logger.debug(command)
+        os.system(command)
+        time.sleep(4)
+        return ProcessTextFile(self.args, text_file + ".txt").run()
 
 #
 # process inputfile
@@ -1370,10 +1377,10 @@ def convert_image_file_to_text(args, input_file):
 def process_input_file(input_file, args):
     if input_file.lower().endswith('.txt'):
         logger.info("Input file is TEXT, so skipping image conversion")
-        return parse_voters_data(args, input_file)
+        return ProcessTextFile(args, input_file).run()
     if input_file.lower().endswith('.pdf') or input_file.lower().endswith('.png') or input_file.lower().endswith('.jpeg') or input_file.lower().endswith('.jpg'):
         logger.info("Input file is PDF/IMAGE, doing image conversion")
-        return convert_image_file_to_text(args, input_file)
+        return ProcessTextFile(args, input_file).run()
     if os.path.isdir(input_file):
         logger.info("Input %s is a directory, finding all pdf files for processing", input_file)
         pdf_files=[]
