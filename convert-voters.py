@@ -458,7 +458,7 @@ class BoothsDataDownloader:
 
     def __validate_proxy_get_request(self, random_proxy):
         try:
-            return self.session.get(LOGIN_URL, proxies=random_proxy, timeout=30)
+            return self.session.get(LOGIN_URL, proxies=random_proxy, timeout=15)
         except requests.exceptions.ProxyError as e:
             logger.error("[{}_{}] {}".format(self.district, self.ac, str(e)))
             if len(random_proxy) > 0:
@@ -617,13 +617,8 @@ class BoothsDataDownloader:
         os.makedirs(os.path.dirname(outfile), exist_ok=True)
 
         if self.args.dryrun:
-            logger.info("[%d_%d_%d] Processing booth %d)", self.district, self.ac, id, id)
+            logger.info("[%d_%d_%d] Done Processing booth %d)", self.district, self.ac, id, id)
             return None
-
-        #file_exists=get_raw_key(outfile)
-        #if file_exists and int(file_exists) > 0:
-        #    logger.info("[%d_%d_%d] File %s already processed, exists with %d bytes.. skip", self.district,self.ac, id, outfile, int(file_exists))
-        #    return
 
         global killThreads
 
@@ -1151,7 +1146,7 @@ class DownloadACs:
 
 class DownloadACBooths:
     def __init__(self, args, district, ac):
-        return BoothsDataDownloader(args, int(district), int(ac)).get_booths()
+        return BoothsDataDownloader(args, int(district), int(ac)).get_ac_booths()
 
 class DownloadVotersByBooth:
     def __init__(self, args, district, ac, id):
@@ -1163,11 +1158,17 @@ def download_ac_voters_data(args, district, ac, booth_data=None):
     try:
         if booth_data is None:
             logger.info("[%d_%d] Missing booth data, downloading ...", district, ac)
-            data=DownloadACBooths(args, district, ac)
-            if data is None:
-                logger.error("[%d_%d] Failed to download booth data", district, ac)
-                return None
-            booth_data=range(1, len(data) + 1)
+            data=get_raw_key(str(district) + "_" + str(ac) + "_BOOTHS")
+            if data and data is not None:
+                logger.info("[%d_%d] Booth data found from cache, %d booths", district, ac, int(data))
+                booth_data=range(1, int(data) + 1)
+            else:
+                data=DownloadACBooths(args, district, ac)
+                if data is None:
+                    logger.error("[%d_%d] Failed to download booth data", district, ac)
+                    return None
+                set_raw_key(str(district) + "_" + str(ac) + "_BOOTHS", len(data))
+                booth_data=range(1, len(data) + 1)
 
         if args.skipvoters:
             logger.info("VOTERS DATA is skipped due to --skipvoters, total booths: %d", len(booth_data))
@@ -1178,6 +1179,9 @@ def download_ac_voters_data(args, district, ac, booth_data=None):
         global SUCCESS_LIST, FAILED_LIST
         SUCCESS_LIST=[]
         FAILED_LIST=[]
+
+        booth_output_dir=args.output + "/" + str(district) + "_" + str(ac)
+        os.makedirs(booth_output_dir, exist_ok=True)
 
         count=0
         with ThreadPoolExecutor(max_workers=args.threads) as executor:
@@ -1253,6 +1257,7 @@ def download_booths_data(args, district, ac):
         if args.booths:
             booth_data=args.booths.split(",")
             logger.info("Using the supplied booths: {}".format(booth_data))
+            download_ac_voters_data(args, district, ac, booth_data)
         else:
             if ac is None:
                 logger.info("[%d] Missing AC details, fetching AC names", district)
@@ -1267,16 +1272,13 @@ def download_booths_data(args, district, ac):
                     download_ac_voters_data(args, district, ac)
             else:
                 logger.info("[%d_%d] Download the booth data", district, ac)
-                booth_output_dir=args.output + "/" + str(district) + "_" + str(ac)
-                os.makedirs(booth_output_dir, exist_ok=True)
-                booth_file=args.output + "/" + str(district) + "_" + str(ac) + "/" +str( district) + "_" + str(ac) + "_booths.csv"
-                data=get_raw_key(booth_file)
-                if data and int(data) >= 0:
-                    logger.info("[%d_%d] Booth data exists (%d booths), re-using it", district, ac, int(data))
+                data=get_raw_key(str(district) + "_" + str(ac) + "_BOOTHS")
+                if data is not None:
+                    logger.info("[%d_%d] Booth data found from cache, %d booths", district, ac, int(data))
                     booth_data=range(1, int(data) + 1)
                 else:
                     data=DownloadACBooths(args, district, ac)
-                    #set_raw_key(booth_file, len(data))
+                    set_raw_key(str(district) + "_" + str(ac) + "_BOOTHS", len(data))
                     booth_data=range(1, len(data) + 1)
                 download_ac_voters_data(args, district, ac, booth_data)
 
@@ -1337,13 +1339,6 @@ def convert_image_file_to_text(args, input_file):
         logger.error("Input file " + input_file + " does not exists, exiting...")
         sys.exit(1)
 
-    md5=get_md5(input_file)
-    if md5 and not args.skip_lookup_db:
-        text_file=get_key(md5)
-        if text_file:
-            logger.info("File checksum matches, skiping the conversion and using the existing file")
-            return parse_voters_data(args, text_file)
-
     files=os.path.basename(input_file).split(".")
     tiff_file=args.output + "/" + os.path.basename(input_file).replace(files[len(files)-1],'tiff')
     logger.debug("Converting IMAGE to TEXT ...")
@@ -1355,8 +1350,7 @@ def convert_image_file_to_text(args, input_file):
     command="tesseract '" + tiff_file + "' '" + text_file + "' --psm 6 -l eng -c preserve_interword_spaces=1"
     logger.debug(command)
     os.system(command)
-    if parse_voters_data(args, text_file + ".txt"):
-        set_key(md5, text_file + ".txt")
+    return parse_voters_data(args, text_file + ".txt")
 
 
 #
