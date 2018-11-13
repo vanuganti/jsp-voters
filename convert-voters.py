@@ -1369,6 +1369,25 @@ def process_input_file(input_file, args):
     if input_file.lower().endswith('.pdf') or input_file.lower().endswith('.png') or input_file.lower().endswith('.jpeg') or input_file.lower().endswith('.jpg'):
         logger.info("Input file is PDF/IMAGE, doing image conversion")
         return convert_image_file_to_text(args, input_file)
+    if os.path.isdir(input_file):
+        logger.info("Input %s is a directory, finding all pdf files for processing", input_file)
+        pdf_files=[]
+        for root, dirs, files in os.walk(input_file):
+            for f in files:
+                if f.endswith(".pdf"):
+                    pdf_files.append(os.path.join(root, f))
+        logger.info("Found %d files in %s, processing using %d threads", len(pdf_files), input_file, args.threads)
+        count=0
+        with ThreadPoolExecutor(max_workers=args.threads) as executor:
+            for file in pdf_files:
+                if args.limit > 0 and count >= args.limit:
+                    logger.info("LIMIT %d reached, exiting...", args.limit)
+                    break
+                if killThreads:
+                    break
+                executor.submit(convert_image_file_to_text, args, file)
+                count+=1
+        return
     logger.error("Un-supported input file format, exiting")
 
 #
