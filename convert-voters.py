@@ -1397,7 +1397,7 @@ def process_input_file(input_file, args):
                     break
                 if killThreads:
                     break
-                executor.submit(ProcessImageFile, args, file)
+                executor.submit(ProcessImageFile.run, args, file)
                 count+=1
         return
     logger.error("Un-supported input file format, exiting")
