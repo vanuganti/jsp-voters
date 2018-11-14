@@ -709,7 +709,7 @@ class ProcessTextFile():
             return False
 
         try:
-            logger.info("Converting INPUT TEXT FILE %s ", self.input_file)
+            logger.debug("Converting INPUT TEXT FILE %s ", self.input_file)
             file=open(self.input_file, "r")
         except IOError as e:
             logger.exception("Failed to OPEN INPUT FILE %s", self.input_file)
@@ -1122,9 +1122,7 @@ class ProcessTextFile():
                     logger.exception("Exception when writing output")
 
             logger.info("---------------- S U M M A R Y ----------------------")
-            logger.info("Total records: %d, malformed: %d, areas: %d, pages: %d", len(voters), len(malformed), len(area_names), metadata['PAGES'])
-            logger.info("{}".format(metadata))
-            logger.info("CONVERSION DONE")
+            logger.info("CONVERSION DONE, Total records: {}, malformed: {}, areas: {}, pages: {} ({})".format(len(voters), len(malformed), len(area_names), metadata['PAGES'], metadata))
             return len(voters) > 0
 
         except Exception as e:
