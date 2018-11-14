@@ -530,7 +530,7 @@ class BoothsDataDownloader:
             if not html:
                 return add_to_failed_list(id)
 
-            logger.info("[%d_%d_%d] Posting request %s", self.district, self.ac, id, (", retry " + str(retry_count)) if retry_count>0 else "")
+            logger.debug("[%d_%d_%d] Posting request %s", self.district, self.ac, id, (", retry " + str(retry_count)) if retry_count>0 else "")
 
             logger.debug("[%d_%d_%d]  Captcha parsing start...", self.district, self.ac, id)
             captcha_text = ImageToText(self.session, self.proxy, url, outfile).get()
