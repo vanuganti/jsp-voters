@@ -68,7 +68,7 @@ const server=http.listen(3000, function() {
 
 function sendStatus(msg) {
   logger.info(msg);
-	if (msg.includes("Tesseract") || msg.includes("Leptonica")) {
+	if (msg.includes("Tesseract") || msg.includes("Leptonica") || msg.includes("site-packages")) {
 		return
 	}
 	io.emit('STATUS', msg);

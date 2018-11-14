@@ -28,6 +28,9 @@ try:
 except ImportError:
     import Image
 
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 logging.basicConfig(level=logging.ERROR, format='%(asctime)s %(lineno)-4d %(levelname)-8s %(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S')
 logger = logging.getLogger("convert-voters")
@@ -1386,16 +1389,21 @@ class ProcessImageFile():
         os.system(command)
         return ProcessTextFile(args, text_file + ".txt")
 
+def process_input_image_file(args, input_file):
+     return ProcessImageFile(args, input_file).process()
+
+def process_input_text_file(args, input_file):
+    return ProcessImageFile(args, input_file).process()
 #
 # process inputfile
 #
 def process_input_file(input_file, args):
     if input_file.lower().endswith('.txt'):
         logger.info("Input file is TEXT, so skipping image conversion")
-        return ProcessTextFile(args, input_file)
+        return process_input_text_file(args, input_file)
     if input_file.lower().endswith('.pdf') or input_file.lower().endswith('.png') or input_file.lower().endswith('.jpeg') or input_file.lower().endswith('.jpg'):
         logger.info("Input file is PDF/IMAGE, doing image conversion")
-        return ProcessImageFile(args, input_file)
+        return process_input_image_file(args, input_file)
     if os.path.isdir(input_file):
         logger.info("Input %s is a directory, finding all pdf files for processing", input_file)
         pdf_files=[]
@@ -1412,7 +1420,7 @@ def process_input_file(input_file, args):
                     break
                 if killThreads:
                     break
-                executor.submit(ProcessImageFile, args, file)
+                executor.submit(process_input_image_file, args, file)
                 count+=1
         return
     logger.error("Un-supported input file format, exiting")
