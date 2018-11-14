@@ -1383,17 +1383,17 @@ class ProcessImageFile():
         logger.debug(command)
         os.system(command)
         text_file=tiff_file.replace(".tiff", "")
-        logger.info("Converting IMAGE to TEXT file (Will take few minutes depending on the size)...")
+        logger.info("Converting IMAGE to TEXT file (Will take few minutes depending on the size)")
         command="tesseract '" + tiff_file + "' '" + text_file + "' --psm 6 -l eng -c preserve_interword_spaces=1"
         logger.debug(command)
         os.system(command)
-        return ProcessTextFile(args, text_file + ".txt")
+        return process_input_text_file(args, text_file + ".txt")
 
 def process_input_image_file(args, input_file):
      return ProcessImageFile(args, input_file).process()
 
 def process_input_text_file(args, input_file):
-    return ProcessImageFile(args, input_file).process()
+    return ProcessTextFile(args, input_file).process()
 #
 # process inputfile
 #

@@ -2,9 +2,15 @@ function init_handler() {
 	var socket = io();
 	socket.on('STATUS', function (msg) {
 		console.log(msg);
-		let li = document.createElement("li");
-		li.appendChild(document.createTextNode(msg));
-		document.getElementById("status").appendChild(li);
+		if (!msg  || msg.length === 0) {
+			var x = document.getElementById("status").lastChild.innerHTML;
+			document.getElementById("status").lastChild.innerHTML = x + ".";
+		}
+		else {
+			let li = document.createElement("li");
+			li.appendChild(document.createTextNode(msg));
+			document.getElementById("status").appendChild(li);
+		}
 		$("#main-status").animate({
 			scrollTop: $("#main-status").height() + 100
 		}, 300);
