@@ -668,8 +668,7 @@ class BoothsDataDownloader:
 
         except Exception as e:
             logger.error("[%d_%d] Failed to process booth voters data for booth ID %d", self.district, self.ac, id)
-            logger.error(str(e))
-            logger.error(traceback.print_exc)
+            logger.exception("Exception")
 
         return add_to_failed_list(id)
 
@@ -709,8 +708,7 @@ class ProcessTextFile():
             logger.info("Converting INPUT TEXT FILE %s ", self.input_file)
             file=open(self.input_file, "r")
         except IOError as e:
-            logger.error("Failed to OPEN INPUT FILE %s", self.input_file)
-            logger.error(str(e))
+            logger.exception("Failed to OPEN INPUT FILE %s", self.input_file)
             return False
 
         metadata={}
@@ -1117,8 +1115,7 @@ class ProcessTextFile():
                             print(voter)
                         print("\n\n")
                 except Exception as e:
-                    logger.error("Exception when writing output")
-                    logger.error(e, exc_info=True)
+                    logger.exception("Exception when writing output")
 
             logger.info("---------------- S U M M A R Y ----------------------")
             logger.info("Total records: %d, malformed: %d, areas: %d, pages: %d", len(voters), len(malformed), len(area_names), metadata['PAGES'])
@@ -1127,9 +1124,8 @@ class ProcessTextFile():
             return len(voters) > 0
 
         except Exception as e:
-            logger.error("Exception in the line '{}': {}".format(lno, sline))
             logger.error(voter)
-            logger.error(e, exc_info=True)
+            logger.exception("Exception in the line '{}': {}".format(lno, sline))
             return False
 
 def add_to_failed_list(booth_id):
@@ -1137,7 +1133,7 @@ def add_to_failed_list(booth_id):
         if booth_id and booth_id not in FAILED_LIST:
             FAILED_LIST.append(booth_id)
     except Exception as e:
-        logger.error(str(e))
+        logger.exception("Failed to add to failed list")
         pass
     return None
 
@@ -1148,7 +1144,7 @@ def remove_from_failed_list(booth_id):
         if booth_id and booth_id not in SUCCESS_LIST:
             SUCCESS_LIST.append(booth_id)
     except Exception as e:
-        logger.error(str(e))
+        logger.exception("Failed from failed list")
         pass
     return None
 
@@ -1230,8 +1226,7 @@ def download_ac_voters_data(args, district, ac, booth_data=None):
         logger.error("Keyboard interrupt received, killing it")
         killThreads = True
     except Exception as e:
-        logger.error(str(e))
-        traceback.print_exc(file=sys.stdout)
+        logger.exception("Exception")
 
 def add_remove_proxy(proxy):
     if proxy and proxy['http'] in PROXY_LIST:
@@ -1262,11 +1257,11 @@ def download_booths_data(args, district, ac):
                         continue
                     proxy_list.remove(proxy)
                 except requests.exceptions.ProxyError as e:
-                    logger.error("Exception, removing {} from proxy list {}".format(proxy, str(e)))
+                    logger.exception("Exception, removing {} from proxy list".format(proxy))
                     proxy_list.remove(proxy)
                     continue
                 except Exception as e:
-                    logger.error("Exception, removing {} from proxy list {}".format(proxy, str(e)))
+                    logger.exception("Exception, removing {} from proxy list".format(proxy))
                     proxy_list.remove(proxy)
                     continue
 
@@ -1307,8 +1302,7 @@ def download_booths_data(args, district, ac):
         logger.error("Keyboard interrupt received, killing it")
         killThreads = True
     except Exception as e:
-        logger.error(str(e))
-        traceback.print_exc(file=sys.stdout)
+        logger.exception("Exception")
 
 def get_md5(filename):
     try:
@@ -1320,8 +1314,7 @@ def get_md5(filename):
         logger.info("MD5 for {}: {}".format(filename, md5))
         return md5
     except Exception as e:
-        logger.error("MD5 failed for file %s", filename)
-        logger.error(e)
+        logger.exception("MD5 failed for file %s", filename)
     return None
 
 def get_key(key):
@@ -1441,8 +1434,7 @@ if __name__ == "__main__":
             REDIS=redis.Redis(host='localhost')
             logger.info("Connected to Redis version %s", REDIS.execute_command('INFO')['redis_version'])
         except Exception as e:
-            logger.error("Failed to connect to Redis, skipping the MD5 lookups")
-            logger.error(str(e))
+            logger.exception("Failed to connect to Redis, skipping the MD5 lookups")
             REDIS=None
     handle_arguments(parser, args)
 
