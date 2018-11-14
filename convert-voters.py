@@ -1234,7 +1234,6 @@ def download_booths_data(args, district, ac):
     global PROXY_LIST
 
     district=int(district)
-    ac=int(ac)
 
     try:
         if args.skipproxy:
@@ -1277,8 +1276,9 @@ def download_booths_data(args, district, ac):
                 logger.info("[{}] ACS: {}".format(district, acs))
 
                 for ac in acs:
-                    download_ac_voters_data(args, district, ac)
+                    download_ac_voters_data(args, district, int(ac))
             else:
+                ac=int(ac)
                 logger.info("[%d_%d] Download the booth data", district, ac)
                 data=get_raw_key(str(district) + "_" + str(ac) + "_BOOTHS")
                 if data is not None:
