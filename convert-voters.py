@@ -40,6 +40,7 @@ SUCCESS_LIST=[]
 killThreads=False
 CSVLOCK=threading.Lock()
 REDIS=None
+MAX_PROXIES=6
 
 ###################################################################################################
 # Option handling
@@ -1222,6 +1223,10 @@ def download_ac_voters_data(args, district, ac, booth_data=None):
                         executor.submit(DownloadVotersByBooth, args, district, ac, id)
                         count+=1
 
+        logger.info("[%d_%d] DONE", district, ac)
+        logger.info("[{}_{}] SUCCESS BOOTH LIST {}".format(district, ac, SUCCESS_LIST.sort()))
+        logger.info("[{}_{}] FAILED  BOOTH LIST {}".format(district, ac, FAILED_LIST.sort()))
+
     except KeyboardInterrupt:
         logger.error("Keyboard interrupt received, killing it")
         killThreads = True
@@ -1232,7 +1237,40 @@ def add_remove_proxy(proxy):
     if proxy and proxy['http'] in PROXY_LIST:
         logger.info("Removing PROXY {}".format(proxy['http']))
         PROXY_LIST.remove(proxy['http'])
+        if len(PROXY_LIST) <= 3:
+            update_proxylist(PROXY_LIST)
         logger.info(PROXY_LIST)
+
+def update_proxylist(current_proxies=list()):
+    logger.debug("Updating PROXY LIST from %d to %d", len(current_proxies), MAX_PROXIES)
+    count=MAX_PROXIES-len(list)
+    proxy_list = ProxyList().get(limit=count)
+    for proxy in proxy_list:
+        try:
+            p = {'http': proxy}
+            result= requests.post("http://ceoaperms.ap.gov.in/Electoral_Rolls/Rolls.aspx", proxies=p, timeout=15)
+            if result.status_code == 200:
+                continue
+            proxy_list.remove(proxy)
+        except requests.exceptions.ProxyError as e:
+            logger.exception("Exception, removing {} from proxy list".format(proxy))
+            proxy_list.remove(proxy)
+            continue
+        except Exception as e:
+            logger.exception("Exception, removing {} from proxy list".format(proxy))
+            proxy_list.remove(proxy)
+            continue
+
+    for proxy in current_proxies:
+        proxy_list.append(proxy)
+
+    if proxy_list and len(proxy_list) > 0:
+        logger.debug("Using the proxy list {}".format(proxy_list))
+        global PROXY_LIST
+        PROXY_LIST = proxy_list
+    else:
+        PROXY_LIST=[]
+
 #
 # Download booth data
 #
@@ -1248,27 +1286,7 @@ def download_booths_data(args, district, ac):
             PROXY_LIST=[]
         else:
             logger.debug("Getting latest PROXY list")
-            proxy_list = ProxyList().get(limit=6)
-            for proxy in proxy_list:
-                try:
-                    p = {'http': proxy}
-                    result= requests.post("http://ceoaperms.ap.gov.in/Electoral_Rolls/Rolls.aspx", proxies=p, timeout=15)
-                    if result.status_code == 200:
-                        continue
-                    proxy_list.remove(proxy)
-                except requests.exceptions.ProxyError as e:
-                    logger.exception("Exception, removing {} from proxy list".format(proxy))
-                    proxy_list.remove(proxy)
-                    continue
-                except Exception as e:
-                    logger.exception("Exception, removing {} from proxy list".format(proxy))
-                    proxy_list.remove(proxy)
-                    continue
-
-            if proxy_list and len(proxy_list) > 0:
-                logger.debug("Using the proxy list {}".format(proxy_list))
-                PROXY_LIST = proxy_list
-
+            update_proxylist()
         if args.booths:
             booth_data=args.booths.split(",")
             logger.info("Using the supplied booths: {}".format(booth_data))
