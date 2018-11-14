@@ -1184,7 +1184,7 @@ def download_ac_voters_data(args, district, ac, booth_data=None):
                 logger.info("[%d_%d] Booth data found from cache, %d booths", district, ac, int(data))
                 booth_data=range(1, int(data) + 1)
             else:
-                data=DownloadACBooths(args, district, ac)
+                data=DownloadACBooths(args, district, ac).get()
                 if data is None:
                     logger.error("[%d_%d] Failed to download booth data", district, ac)
                     return None
