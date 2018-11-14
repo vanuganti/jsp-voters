@@ -697,15 +697,19 @@ def remove_special_chars(str):
 
 class ProcessTextFile():
     def __init__(self, args, input_file):
-        if not input_file:
+        self.args=args
+        self.input_file=input_file
+
+    def process(self):
+        if not self.input_file:
             logger.error("Missing input file, returning")
             return False
 
         try:
-            logger.info("Converting INPUT TEXT FILE %s ", input_file)
-            file=open(input_file, "r")
+            logger.info("Converting INPUT TEXT FILE %s ", self.input_file)
+            file=open(self.input_file, "r")
         except IOError as e:
-            logger.error("Failed to OPEN INPUT FILE %s", input_file)
+            logger.error("Failed to OPEN INPUT FILE %s", self.input_file)
             logger.error(str(e))
             return False
 
@@ -1085,14 +1089,14 @@ class ProcessTextFile():
                     col_order=['SNO','ID','NAME','FS_NAME','HNO','AGE','SEX','AREA']
                     data_frame=pd.DataFrame(voters, columns=col_order)
                     if args.csv:
-                        outfile=os.path.basename(input_file).split(".")[0] + ".csv" if input_file else "output.csv"
+                        outfile=os.path.basename(self.input_file).split(".")[0] + ".csv" if self.input_file else "output.csv"
                         if args.output:
                             outfile=args.output + "/" + outfile
                         data_frame.to_csv(outfile, index=False)
                         logger.debug("CSV Output is saved in %s file", outfile)
 
                     if args.xls:
-                        outfile=os.path.basename(input_file).split(".")[0] + ".xlsx" if input_file else "output.xlsx"
+                        outfile=os.path.basename(self.input_file).split(".")[0] + ".xlsx" if self.input_file else "output.xlsx"
                         if args.output:
                             outfile=args.output + "/" + outfile
 
@@ -1150,15 +1154,24 @@ def remove_from_failed_list(booth_id):
 
 class DownloadACs:
     def __init__(self, args, district):
-        return BoothsDataDownloader(args, int(district)).get_acs()
+        self.args=args
+        self.district=district
+
+    def get(self):
+        return BoothsDataDownloader(self.args, int(self.district)).get_acs()
 
 class DownloadACBooths:
     def __init__(self, args, district, ac):
-        return BoothsDataDownloader(args, int(district), int(ac)).get_ac_booths()
+        self.args=args
+        self.district=district
+        self.ac=ac
+
+    def get(self):
+        return BoothsDataDownloader(self.args, int(self.district), int(self.ac)).get_ac_booths()
 
 class DownloadVotersByBooth:
     def __init__(self, args, district, ac, id):
-        return BoothsDataDownloader(args, int(district), int(ac)).get_booth_voters(int(id))
+        BoothsDataDownloader(args, int(district), int(ac)).get_booth_voters(int(id))
 
 def download_ac_voters_data(args, district, ac, booth_data=None):
     global killThreads
@@ -1268,7 +1281,7 @@ def download_booths_data(args, district, ac):
         else:
             if ac is None:
                 logger.info("[%d] Missing AC details, fetching AC names", district)
-                ac_data=DownloadACs(args, district)
+                ac_data=DownloadACs(args, district).get()
                 if ac_data is None:
                     logger.error("[%d] Failed to download AC data", district)
                     return
@@ -1285,7 +1298,7 @@ def download_booths_data(args, district, ac):
                     logger.info("[%d_%d] Booth data found from cache, %d booths", district, ac, int(data))
                     booth_data=range(1, int(data) + 1)
                 else:
-                    data=DownloadACBooths(args, district, ac)
+                    data=DownloadACBooths(args, district, ac).get()
                     set_raw_key(str(district) + "_" + str(ac) + "_BOOTHS", len(data))
                     booth_data=range(1, len(data) + 1)
                 download_ac_voters_data(args, district, ac, booth_data)
@@ -1341,14 +1354,18 @@ def set_raw_key(key, value):
 
 class ProcessImageFile():
     def __init__(self, args, input_file):
-        if not os.path.isfile(input_file):
-            logger.error("Input file " + input_file + " does not exists, exiting...")
+        self.args=args
+        self.input_file=input_file
+
+    def process(self):
+        if not os.path.isfile(self.input_file):
+            logger.error("Input file " + self.input_file + " does not exists, exiting...")
             sys.exit(1)
 
-        files=os.path.basename(input_file).split(".")
-        tiff_file=args.output + "/" + os.path.basename(input_file).replace(files[len(files)-1],'tiff')
+        files=os.path.basename(self.input_file).split(".")
+        tiff_file=args.output + "/" + os.path.basename(self.input_file).replace(files[len(files)-1],'tiff')
         logger.debug("Converting IMAGE to TEXT ...")
-        command="gs -dSAFER -dBATCH -dNOPAUSE -r300 -q -sDEVICE=tiffg4 -sOutputFile='" + tiff_file + "' '" + input_file + "'"
+        command="gs -dSAFER -dBATCH -dNOPAUSE -r300 -q -sDEVICE=tiffg4 -sOutputFile='" + tiff_file + "' '" + self.input_file + "'"
         logger.debug(command)
         os.system(command)
         text_file=tiff_file.replace(".tiff", "")
