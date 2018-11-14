@@ -55,7 +55,7 @@ def init_options():
     parser.add_argument('--dry-run', dest='dryrun', action='store_true', help='Dry run to test')
     parser.add_argument('--skip-voters', dest='skipvoters', action='store_true', help='Skip voters data processing (limit to BOOTH details)')
     parser.add_argument('--skip-proxy', dest='skipproxy', action='store_true', help='Skip proxy to be used for requests')
-    parser.add_argument('--skip-lookup-db', dest='skip_lookup_db', action='store_true', help='Skip using lookup DB for existing files')
+    parser.add_argument('--enable-lookups', dest='enable_lookups', default=False, action='store_true', help='Enable lookups DB with cache (default False)')
     parser.add_argument('--limit', dest='limit', type=int, action='store', default=0, help='Limit total booths (default all booths)')
     parser.add_argument('--stdout', dest='stdout', action='store_true', help='Write output to stdout instead of CSV file')
     parser.add_argument('--input', dest='input', type=str, action='store', default=None, help='Use the input file specified instead of downloading')
@@ -260,7 +260,7 @@ class BoothsDataDownloader:
     def __init__(self, args, district=None, ac=None):
         self.args=args
         self.district=int(district) if district is not None else int(args.district)
-        self.ac=int(ac) if ac is not None else int(args.ac)
+        self.ac=int(ac) if ac is not None else int(args.ac) if args.ac is not None else None
         self.proxy={} if args.skipproxy else {'http': choice(PROXY_LIST)}
         self.session=None
 
@@ -696,17 +696,7 @@ def remove_special_chars(str):
 
 
 class ProcessTextFile():
-    def __init__(self, args, file, execute=True):
-        self.args=args
-        self.input_file=file
-
-        if execute:
-            return self.run()
-
-    def run(self):
-        return self.__parse_voters_data(self.args, self.input_file)
-
-    def __parse_voters_data(self, args, input_file):
+    def __init__(self, args, input_file):
         if not input_file:
             logger.error("Missing input file, returning")
             return False
@@ -1350,23 +1340,15 @@ def set_raw_key(key, value):
     return None
 
 class ProcessImageFile():
-    def __init__(self, args, file, execute=True):
-        self.args=args
-        self.file=file
-
-        if execute:
-            logger.info("Processing IMAGE file %s", file)
-            return self.run()
-
-    def run(self):
-        if not os.path.isfile(self.file):
-            logger.error("Input file " + self.file + " does not exists, exiting...")
+    def __init__(self, args, input_file):
+        if not os.path.isfile(input_file):
+            logger.error("Input file " + input_file + " does not exists, exiting...")
             sys.exit(1)
 
-        files=os.path.basename(self.file).split(".")
-        tiff_file=self.args.output + "/" + os.path.basename(self.file).replace(files[len(files)-1],'tiff')
+        files=os.path.basename(input_file).split(".")
+        tiff_file=args.output + "/" + os.path.basename(input_file).replace(files[len(files)-1],'tiff')
         logger.debug("Converting IMAGE to TEXT ...")
-        command="gs -dSAFER -dBATCH -dNOPAUSE -r300 -q -sDEVICE=tiffg4 -sOutputFile='" + tiff_file + "' '" + self.file + "'"
+        command="gs -dSAFER -dBATCH -dNOPAUSE -r300 -q -sDEVICE=tiffg4 -sOutputFile='" + tiff_file + "' '" + input_file + "'"
         logger.debug(command)
         os.system(command)
         text_file=tiff_file.replace(".tiff", "")
@@ -1374,7 +1356,7 @@ class ProcessImageFile():
         command="tesseract '" + tiff_file + "' '" + text_file + "' --psm 6 -l eng -c preserve_interword_spaces=1"
         logger.debug(command)
         os.system(command)
-        return ProcessTextFile(self.args, text_file + ".txt", True)
+        return ProcessTextFile(args, text_file + ".txt")
 
 #
 # process inputfile
@@ -1385,7 +1367,7 @@ def process_input_file(input_file, args):
         return ProcessTextFile(args, input_file)
     if input_file.lower().endswith('.pdf') or input_file.lower().endswith('.png') or input_file.lower().endswith('.jpeg') or input_file.lower().endswith('.jpg'):
         logger.info("Input file is PDF/IMAGE, doing image conversion")
-        return ProcessTextFile(args, input_file)
+        return ProcessImageFile(args, input_file)
     if os.path.isdir(input_file):
         logger.info("Input %s is a directory, finding all pdf files for processing", input_file)
         pdf_files=[]
@@ -1437,7 +1419,7 @@ if __name__ == "__main__":
     parser, args = init_options()
     logger.setLevel(logging.DEBUG) if args.debug else logger.setLevel(logging.INFO)
 
-    if not args.skip_lookup_db:
+    if args.enable_lookups:
         try:
             REDIS=redis.Redis(host='localhost')
             logger.info("Connected to Redis version %s", REDIS.execute_command('INFO')['redis_version'])
