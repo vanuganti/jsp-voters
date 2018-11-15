@@ -602,7 +602,7 @@ class BoothsDataDownloader:
                 return remove_from_failed_list(id)
 
             except requests.exceptions.Timeout:
-                logger.error("[%d_%d_%d] timeout, retry %d", self.district, self.ac, id)
+                logger.error("[%d_%d_%d] timeout, retry %d", self.district, self.ac, id, retry_count)
                 return "ERROR"
 
             except Exception as e:
@@ -670,6 +670,9 @@ class BoothsDataDownloader:
                     continue
 
                 return remove_from_failed_list(id)
+
+        except requests.exceptions.Timeout:
+            logger.error("[%d_%d_%d] timeout, retry %d", self.district, self.ac, id, retry_count)
 
         except Exception as e:
             logger.error("[%d_%d] Failed to process booth voters data for booth ID %d", self.district, self.ac, id)
