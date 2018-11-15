@@ -1245,12 +1245,13 @@ def add_remove_proxy(proxy):
             update_proxylist(PROXY_LIST)
         logger.info(PROXY_LIST)
 
-def update_proxylist(current_proxies=list()):
-    logger.debug("Updating PROXY LIST from %d to %d", len(current_proxies), MAX_PROXIES)
+def update_proxylist(current_proxy=list()):
+    logger.debug("Updating PROXY LIST from %d to %d", len(current_proxy), MAX_PROXIES)
     proxy_list = ProxyList().get(limit=6)
     for proxy in proxy_list:
         try:
             if proxy in PROXY_LIST_FAILED:
+                proxy_list.remove(proxy)
                 continue
             p = {'http': proxy}
             result= requests.post("http://ceoaperms.ap.gov.in/Electoral_Rolls/Rolls.aspx", proxies=p, timeout=15)
@@ -1260,19 +1261,17 @@ def update_proxylist(current_proxies=list()):
             if proxy not in PROXY_LIST_FAILED:
                 PROXY_LIST_FAILED.append(proxy)
         except requests.exceptions.ProxyError as e:
-            logger.exception("Exception, removing {} from proxy list".format(proxy))
             proxy_list.remove(proxy)
             if proxy not in PROXY_LIST_FAILED:
                 PROXY_LIST_FAILED.append(proxy)
             continue
         except Exception as e:
-            logger.exception("Exception, removing {} from proxy list".format(proxy))
             proxy_list.remove(proxy)
             if proxy not in PROXY_LIST_FAILED:
                 PROXY_LIST_FAILED.append(proxy)
             continue
 
-    for proxy in current_proxies:
+    for proxy in current_proxy:
         proxy_list.append(proxy)
 
     if proxy_list and len(proxy_list) > 0:
