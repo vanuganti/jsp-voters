@@ -579,7 +579,7 @@ class BoothsDataDownloader:
                 bytes=0
 
                 with open(outfile, 'wb') as myfile:
-                    logger.info("[%d_%d_%d]  Downloading the file %s", self.district, self.ac, id, outfile)
+                    logger.info("[%d_%d_%d]  Downloading the file %s %s", self.district, self.ac, id, outfile, "retry " + str(retry_count) if retry_count > 0 else "")
                     chunks = results.iter_content(chunk_size=1024*64)
                     for chunk in chunks:
                         last_chunk=chunk
@@ -1123,7 +1123,7 @@ class ProcessTextFile():
                     logger.exception("Exception when writing output")
 
             logger.info("---------------- S U M M A R Y ----------------------")
-            logger.info("CONVERSION DONE, Total records: {}, malformed: {}, areas: {}, pages: {} ({})".format(len(voters), len(malformed), len(area_names), metadata['PAGES'], metadata))
+            logger.info("CONVERSION DONE, Total records: {}, malformed: {}, areas: {}, ({})".format(len(voters), len(malformed), len(area_names), metadata['PAGES'], metadata))
             return len(voters) > 0
 
         except Exception as e:
@@ -1142,6 +1142,7 @@ def add_to_failed_list(booth_id):
 
 def remove_from_failed_list(booth_id):
     try:
+        global FAILED_LIST, SUCCESS_LIST
         if booth_id and booth_id in FAILED_LIST:
             FAILED_LIST.remove(booth_id)
         if booth_id and booth_id not in SUCCESS_LIST:
@@ -1226,8 +1227,10 @@ def download_ac_voters_data(args, district, ac, booth_data=None):
                         count+=1
 
         logger.info("[%d_%d] DONE", district, ac)
-        logger.info("[{}_{}] SUCCESS BOOTH LIST {}".format(district, ac, SUCCESS_LIST.sort()))
-        logger.info("[{}_{}] FAILED  BOOTH LIST {}".format(district, ac, FAILED_LIST.sort()))
+        if len(SUCCESS_LIST) > 0:
+            logger.info("[{}_{}] SUCCESS BOOTH LIST {}".format(district, ac, SUCCESS_LIST.sort()))
+        if len(FAILED_LIST) > 0:
+            logger.info("[{}_{}] FAILED  BOOTH LIST {}".format(district, ac, FAILED_LIST.sort()))
 
     except KeyboardInterrupt:
         logger.error("Keyboard interrupt received, killing it")
@@ -1275,7 +1278,7 @@ def update_proxylist(current_proxy=list()):
         proxy_list.append(proxy)
 
     if proxy_list and len(proxy_list) > 0:
-        logger.debug("Using the proxy list {}".format(proxy_list))
+        logger.info("Using the proxy list {}".format(proxy_list))
         global PROXY_LIST
         PROXY_LIST = proxy_list
     else:
