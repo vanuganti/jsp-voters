@@ -245,6 +245,8 @@ PROXY_LIST = [
     "http://212.237.52.148:80"
 ]
 
+PROXY_LIST_FAILED = []
+
 DESKTOP_AGENTS = [
     'Chrome/54.0.2840.99 Safari/537.36',
     'Chrome/54.0.2840.99 Safari/537.36',
@@ -1237,28 +1239,37 @@ def add_remove_proxy(proxy):
     if proxy and proxy['http'] in PROXY_LIST:
         logger.info("Removing PROXY {}".format(proxy['http']))
         PROXY_LIST.remove(proxy['http'])
-        if len(PROXY_LIST) <= 3:
+        if proxy['http'] not in PROXY_LIST_FAILED:
+            PROXY_LIST_FAILED.append(proxy['http'])
+        if len(PROXY_LIST) <= 1:
             update_proxylist(PROXY_LIST)
         logger.info(PROXY_LIST)
 
 def update_proxylist(current_proxies=list()):
     logger.debug("Updating PROXY LIST from %d to %d", len(current_proxies), MAX_PROXIES)
-    count=MAX_PROXIES-len(current_proxies)
-    proxy_list = ProxyList().get(limit=count)
+    proxy_list = ProxyList().get(limit=6)
     for proxy in proxy_list:
         try:
+            if proxy in PROXY_LIST_FAILED:
+                continue
             p = {'http': proxy}
             result= requests.post("http://ceoaperms.ap.gov.in/Electoral_Rolls/Rolls.aspx", proxies=p, timeout=15)
             if result.status_code == 200:
                 continue
             proxy_list.remove(proxy)
+            if proxy not in PROXY_LIST_FAILED:
+                PROXY_LIST_FAILED.append(proxy)
         except requests.exceptions.ProxyError as e:
             logger.exception("Exception, removing {} from proxy list".format(proxy))
             proxy_list.remove(proxy)
+            if proxy not in PROXY_LIST_FAILED:
+                PROXY_LIST_FAILED.append(proxy)
             continue
         except Exception as e:
             logger.exception("Exception, removing {} from proxy list".format(proxy))
             proxy_list.remove(proxy)
+            if proxy not in PROXY_LIST_FAILED:
+                PROXY_LIST_FAILED.append(proxy)
             continue
 
     for proxy in current_proxies:
