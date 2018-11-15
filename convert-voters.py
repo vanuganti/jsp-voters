@@ -1,5 +1,7 @@
 #!/usr/bin/python
 
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 import logging
 import argparse
@@ -27,9 +29,6 @@ try:
     from PIL import Image, ImageEnhance, ImageFilter
 except ImportError:
     import Image
-
-import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 logging.basicConfig(level=logging.ERROR, format='%(asctime)s %(lineno)-4d %(levelname)-8s %(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S')
@@ -1244,7 +1243,7 @@ def add_remove_proxy(proxy):
 
 def update_proxylist(current_proxies=list()):
     logger.debug("Updating PROXY LIST from %d to %d", len(current_proxies), MAX_PROXIES)
-    count=MAX_PROXIES-len(list)
+    count=MAX_PROXIES-len(current_proxies)
     proxy_list = ProxyList().get(limit=count)
     for proxy in proxy_list:
         try:
