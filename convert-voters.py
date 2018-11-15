@@ -603,9 +603,9 @@ class BoothsDataDownloader:
                 logger.info("[%d_%d_%d]  File %s downloaded, total bytes: %d", self.district, self.ac, id, outfile, bytes)
                 return remove_from_failed_list(id)
 
-            except requests.exceptions.Timeout:
-            except requests.exceptions.ReadTimeout:
+            except (socket.timeout, requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
                 logger.error("[%d_%d_%d] timeout, retry %d", self.district, self.ac, id, retry_count)
+                logger.error(str(e))
                 add_remove_proxy(self.proxy)
                 self.proxy={} if args.skipproxy else {'http': choice(PROXY_LIST)}
                 return "ERROR"
@@ -678,10 +678,9 @@ class BoothsDataDownloader:
 
                     return remove_from_failed_list(id)
 
-                except socket.timeout:
-                except requests.exceptions.Timeout:
-                except requests.exceptions.ReadTimeout:
+                except (socket.timeout, requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
                     logger.error("[%d_%d_%d] timeout, retry %d", self.district, self.ac, id, retry_count)
+                    logger.error(str(e))
                     add_remove_proxy(self.proxy)
                     self.proxy={} if args.skipproxy else {'http': choice(PROXY_LIST)}
                     continue
