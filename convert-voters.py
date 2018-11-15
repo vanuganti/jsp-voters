@@ -1242,13 +1242,9 @@ def download_ac_voters_data(args, district, ac, booth_data=None):
                         executor.submit(DownloadVotersByBooth, args, district, ac, id)
                         count+=1
 
-        logger.info("[%d_%d] DONE", district, ac)
-        if len(SUCCESS_LIST) > 0:
-            SUCCESS_LIST.sort()
-            logger.info("[{}_{}] SUCCESS BOOTH LIST {}".format(district, ac, SUCCESS_LIST))
         if len(FAILED_LIST) > 0:
             FAILED_LIST.sort()
-            logger.info("[{}_{}] FAILED  BOOTH LIST {}".format(district, ac, FAILED_LIST))
+            logger.info("[{}_{}] DONE. FAILED  BOOTH LIST {}".format(district, ac, FAILED_LIST))
 
     except KeyboardInterrupt:
         logger.error("Keyboard interrupt received, killing it")
