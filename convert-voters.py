@@ -1136,6 +1136,7 @@ class ProcessTextFile():
 
 def add_to_failed_list(booth_id):
     try:
+        global FAILED_LIST
         if booth_id and booth_id not in FAILED_LIST:
             FAILED_LIST.append(booth_id)
     except Exception as e:
