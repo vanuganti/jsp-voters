@@ -1,7 +1,9 @@
 #!/usr/bin/python
 
+def warn(*args, **kwargs):
+    pass
 import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.warn = warn
 
 import logging
 import argparse
