@@ -25,7 +25,7 @@ import pandas as pd
 import hashlib
 import redis
 from io import BytesIO
-
+import socket
 
 try:
     from PIL import Image, ImageEnhance, ImageFilter
@@ -604,6 +604,7 @@ class BoothsDataDownloader:
                 return remove_from_failed_list(id)
 
             except requests.exceptions.Timeout:
+            except requests.exceptions.ReadTimeout:
                 logger.error("[%d_%d_%d] timeout, retry %d", self.district, self.ac, id, retry_count)
                 add_remove_proxy(self.proxy)
                 self.proxy={} if args.skipproxy else {'http': choice(PROXY_LIST)}
@@ -677,7 +678,9 @@ class BoothsDataDownloader:
 
                     return remove_from_failed_list(id)
 
+                except socket.timeout:
                 except requests.exceptions.Timeout:
+                except requests.exceptions.ReadTimeout:
                     logger.error("[%d_%d_%d] timeout, retry %d", self.district, self.ac, id, retry_count)
                     add_remove_proxy(self.proxy)
                     self.proxy={} if args.skipproxy else {'http': choice(PROXY_LIST)}
@@ -685,7 +688,8 @@ class BoothsDataDownloader:
 
         except Exception as e:
             logger.error("[%d_%d] Failed to process booth voters data for booth ID %d", self.district, self.ac, id)
-            logger.exception("Exception")
+            logger.error("Exception {}".format(str(e)))
+
 
         return add_to_failed_list(id)
 
@@ -1241,9 +1245,11 @@ def download_ac_voters_data(args, district, ac, booth_data=None):
 
         logger.info("[%d_%d] DONE", district, ac)
         if len(SUCCESS_LIST) > 0:
-            logger.info("[{}_{}] SUCCESS BOOTH LIST {}".format(district, ac, SUCCESS_LIST.sort()))
+            SUCCESS_LIST.sort()
+            logger.info("[{}_{}] SUCCESS BOOTH LIST {}".format(district, ac, SUCCESS_LIST))
         if len(FAILED_LIST) > 0:
-            logger.info("[{}_{}] FAILED  BOOTH LIST {}".format(district, ac, FAILED_LIST.sort()))
+            FAILED_LIST.sort()
+            logger.info("[{}_{}] FAILED  BOOTH LIST {}".format(district, ac, FAILED_LIST))
 
     except KeyboardInterrupt:
         logger.error("Keyboard interrupt received, killing it")
