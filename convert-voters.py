@@ -362,8 +362,8 @@ class BoothsDataDownloader:
 
             self.session = requests.Session()
             self.session.headers.update({'User-Agent': choice(DESKTOP_AGENTS),'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'})
+            url = None
 
-            url=None
             if not args.skipproxy:
                 logger.info("[%d_%d] Start downloading booth data [%s]", self.district, self.ac, self.proxy['http'] if len(self.proxy) > 0 else "")
                 for i in range(len(PROXY_LIST)):
@@ -603,6 +603,8 @@ class BoothsDataDownloader:
 
             except requests.exceptions.Timeout:
                 logger.error("[%d_%d_%d] timeout, retry %d", self.district, self.ac, id, retry_count)
+                add_remove_proxy(self.proxy)
+                self.proxy={} if args.skipproxy else {'http': choice(PROXY_LIST)}
                 return "ERROR"
 
             except Exception as e:
@@ -633,46 +635,51 @@ class BoothsDataDownloader:
             retry_count=0
 
             while retry_count <= 5:
-                if killThreads:
-                    return None
 
-                if not self.session:
-                    self.session = requests.Session()
+                try:
+                    if killThreads:
+                        return None
 
-                self.session.headers.update({'User-Agent': choice(DESKTOP_AGENTS),'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'})
+                    if not self.session:
+                        self.session = requests.Session()
 
-                if retry_count > 0:
-                    logger.debug("[%d_%d_%d] Retrying the download %d", self.district, self.ac, id, retry_count)
+                    self.session.headers.update({'User-Agent': choice(DESKTOP_AGENTS),'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'})
 
-                retry_count+=1
+                    if retry_count > 0:
+                        logger.debug("[%d_%d_%d] Retrying the download %d", self.district, self.ac, id, retry_count)
 
-                logger.debug("[%d_%d_%d]  post request without captcha start...", self.district, self.ac, id)
-                result = self.session.post(url, proxies=self.proxy, timeout=60)
-                logger.debug("[%d_%d_%d]  post request without captcha done...", self.district, self.ac, id)
+                    retry_count+=1
 
-                if not result:
-                    logger.error("[%d_%d_%d] Failed to post for booth data, empty results", self.district,self.ac, id)
-                    return add_to_failed_list(id)
+                    logger.debug("[%d_%d_%d]  post request without captcha start...", self.district, self.ac, id)
+                    result = self.session.post(url, proxies=self.proxy, timeout=60)
+                    logger.debug("[%d_%d_%d]  post request without captcha done...", self.district, self.ac, id)
 
-                if result and result.status_code != 200:
-                    logger.error("[%d_%d_%d] Failed to post request, code %d", self.district,self.ac, id, result.status_code)
-                    logger.error(result.reason)
+                    if not result:
+                        logger.error("[%d_%d_%d] Failed to post for booth data, empty results", self.district,self.ac, id)
+                        return add_to_failed_list(id)
+
+                    if result and result.status_code != 200:
+                        logger.error("[%d_%d_%d] Failed to post request, code %d", self.district,self.ac, id, result.status_code)
+                        logger.error(result.reason)
+                        continue
+
+                    if result and result.status_code == 429:
+                        logger.error("[%d_%d_%d] Too many requests warning, sleep & retry %d", self.district,self.ac, id, retry_count)
+                        time.sleep(randint(5,10))
+                        continue
+
+                    data = self.__process_captcha_request(url, outfile, result, id)
+                    if data and data == "ERROR":
+                        logger.error("[%d_%d_%d] Failed to post request, retrying...", self.district, self.ac, id)
+                        continue
+
+                    return remove_from_failed_list(id)
+
+                except requests.exceptions.Timeout:
+                    logger.error("[%d_%d_%d] timeout, retry %d", self.district, self.ac, id, retry_count)
+                    add_remove_proxy(self.proxy)
+                    self.proxy={} if args.skipproxy else {'http': choice(PROXY_LIST)}
                     continue
-
-                if result and result.status_code == 429:
-                    logger.error("[%d_%d_%d] Too many requests warning, sleep & retry %d", self.district,self.ac, id, retry_count)
-                    time.sleep(randint(5,10))
-                    continue
-
-                data = self.__process_captcha_request(url, outfile, result, id)
-                if data and data == "ERROR":
-                    logger.error("[%d_%d_%d] Failed to post request, retrying...", self.district, self.ac, id)
-                    continue
-
-                return remove_from_failed_list(id)
-
-        except requests.exceptions.Timeout:
-            logger.error("[%d_%d_%d] timeout, retry %d", self.district, self.ac, id, retry_count)
 
         except Exception as e:
             logger.error("[%d_%d] Failed to process booth voters data for booth ID %d", self.district, self.ac, id)
