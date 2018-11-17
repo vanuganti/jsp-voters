@@ -1418,6 +1418,11 @@ async def async_process_image_file(args, input_file):
 
     files=os.path.basename(input_file).split(".")
     tiff_file=args.output + "/" + os.path.basename(input_file).replace(files[len(files)-1],'tiff')
+    text_file=tiff_file.replace(".tiff", "")
+    if os.path.isfile(text_file +".txt"):
+        logger.warning("Input file %s skipped as the conversion already done", input_file)
+        return 0
+
     logger.debug("Converting IMAGE to TEXT ...")
     command="gs -dSAFER -dBATCH -dNOPAUSE -r300 -q -sDEVICE=tiffg4 -sOutputFile=" + tiff_file + " " + input_file
     logger.debug(command)
@@ -1425,9 +1430,8 @@ async def async_process_image_file(args, input_file):
     returncode = await proc.wait()
     if returncode != 0:
         logger.error("Failed to convert IMAGE TO TEXT %s, PHASE 1, return code: %s", input_file, returncode)
-        return 1
+        return 0
 
-    text_file=tiff_file.replace(".tiff", "")
     logger.info("Converting IMAGE to TEXT file (Will take few minutes depending on the size)")
     command="tesseract " + tiff_file + " " + text_file + " --psm 6 -l eng -c preserve_interword_spaces=1 quiet"
     logger.debug(command)
@@ -1435,7 +1439,7 @@ async def async_process_image_file(args, input_file):
     returncode = await proc.wait()
     if returncode != 0:
         logger.error("Failed to convert IMAGE TO TEXT %s, PHASE 2, return code: %s", input_file, returncode)
-        return 1
+        return 0
     return returncode
 
 async def async_process_image_file_with_limits(args, sem, input_file):
