@@ -1424,7 +1424,7 @@ async def async_process_image_file(args, input_file):
     proc = await asyncio.create_subprocess_exec(*command.split())
     returncode = await proc.wait()
     if returncode != 0:
-        logger.error("Failed to convert IMAGE TO TEXT, PHASE 1, return code: %s", returncode)
+        logger.error("Failed to convert IMAGE TO TEXT %s, PHASE 1, return code: %s", input_file, returncode)
         return 1
 
     text_file=tiff_file.replace(".tiff", "")
@@ -1434,7 +1434,7 @@ async def async_process_image_file(args, input_file):
     proc = await asyncio.create_subprocess_exec(*command.split())
     returncode = await proc.wait()
     if returncode != 0:
-        logger.error("Failed to convert IMAGE TO TEXT, PHASE 2, return code: %s", returncode)
+        logger.error("Failed to convert IMAGE TO TEXT %s, PHASE 2, return code: %s", input_file, returncode)
         return 1
     return returncode
 
