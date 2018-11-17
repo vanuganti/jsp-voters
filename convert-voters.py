@@ -274,61 +274,59 @@ class BoothsDataDownloader:
     def get_acs(self):
         global killThreads
 
-        try:
-            if killThreads:
-                return
+        retryCount = 0
+        while retryCount <= 5:
+            try:
+                if killThreads:
+                    return
 
-            self.session = requests.Session()
-            self.session.headers.update({'User-Agent': choice(DESKTOP_AGENTS),'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'})
+                self.session = requests.Session()
+                self.session.headers.update({'User-Agent': choice(DESKTOP_AGENTS),'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'})
 
-            url=None
-            if not args.skipproxy:
-                logger.info("[%d] Start downloading AC data %s", self.district, self.proxy['http'] if len(self.proxy) > 0 else "")
-                for i in range(len(PROXY_LIST)):
-                    url = self.__validate_proxy_get_request(self.proxy)
-                    if url or len(self.proxy) == 0 or len(PROXY_LIST) == 0:
-                        break
-                    self.proxy={'http': choice(PROXY_LIST)}
-            else:
-                logger.info("[%d] Start downloading AC data...", self.district)
-                url = self.__validate_non_proxy_get_request()
+                url=None
+                if not args.skipproxy:
+                    logger.info("[%d] Start downloading AC data %s", self.district, self.proxy['http'] if len(self.proxy) > 0 else "")
+                    for i in range(len(PROXY_LIST)):
+                        url = self.__validate_proxy_get_request(self.proxy)
+                        if url or len(self.proxy) == 0 or len(PROXY_LIST) == 0:
+                            break
+                        self.proxy={'http': choice(PROXY_LIST)}
+                else:
+                    logger.info("[%d] Start downloading AC data...", self.district)
+                    url = self.__validate_non_proxy_get_request()
 
-            if url is None:
-                return None
+                if url is None:
+                    return None
 
-            soup = BeautifulSoup(url.text, "lxml")
-            view_state = ''
-            event_validation = ''
+                soup = BeautifulSoup(url.text, "lxml")
+                view_state = ''
+                event_validation = ''
 
-            inputs = soup.findAll('input')
-            for input in inputs:
-                if input['name'] == '__EVENTVALIDATION':
-                    event_validation = input['value']
-                if input['name'] == '__VIEWSTATE':
-                    view_state = input['value']
+                inputs = soup.findAll('input')
+                for input in inputs:
+                    if input['name'] == '__EVENTVALIDATION':
+                        event_validation = input['value']
+                    if input['name'] == '__VIEWSTATE':
+                        view_state = input['value']
 
-            baseData = {
-                  '__EVENTTARGET' : 'ddlDist',
-                  '__EVENTARGUMENT' : '',
-                  '__LASTFOCUS' : '',
-                  '__VIEWSTATE' : view_state,
-                  '__EVENTVALIDATION' : event_validation,
-                  'ddlDist': self.district,
-                  'ddlAC': 0
-            }
-            result = self.session.post(LOGIN_URL, data=baseData, proxies=self.proxy, timeout=240)
-            if not result or result.status_code != 200:
-                logger.error("Failed to login, code %d", result.status_code)
-                logger.error(result.reason)
-                if result and result.status_code >= 500:
-                    time.sleep(5)
-                return None
+                baseData = {
+                      '__EVENTTARGET' : 'ddlDist',
+                      '__EVENTARGUMENT' : '',
+                      '__LASTFOCUS' : '',
+                      '__VIEWSTATE' : view_state,
+                      '__EVENTVALIDATION' : event_validation,
+                      'ddlDist': self.district,
+                      'ddlAC': 0
+                }
+                result = self.session.post(LOGIN_URL, data=baseData, proxies=self.proxy, timeout=240)
+                if not result or result.status_code != 200:
+                    logger.error("Failed to login, code %d", result.status_code)
+                    logger.error(result.reason)
+                    if result and result.status_code >= 500:
+                        time.sleep(5)
+                    return None
 
-            retryCount = 0
-            acList = []
-            global TOTAL_COUNT
-
-            while retryCount <= 5:
+                acList = []
                 retryCount+=1
 
                 if not result or not result.text:
@@ -342,19 +340,19 @@ class BoothsDataDownloader:
                         if name['value'] and int(name['value']) == 0:
                             continue
                         acList.append({'value' : name['value'], 'name': name.text.strip()})
-                break
 
-            if acList is None or len(acList) == 0:
-                logger.error("[%d] FAILED TO PROCESS", self.district)
-            return acList
+                if acList is None or len(acList) == 0:
+                    logger.error("[%d] FAILED TO PROCESS, NO AC DATA FOUND", self.district)
+                    continue
+                return acList
 
-        except KeyboardInterrupt:
-            logger.error("Keyboard interrupt received, killing it")
-            killThreads = True
-            return
-        except Exception as e:
-            logger.error("[%d] Exception %s", self.district, str(e))
-            traceback.print_exc(file=sys.stdout)
+            except KeyboardInterrupt:
+                logger.error("Keyboard interrupt received, killing it")
+                killThreads = True
+                return
+            except Exception as e:
+                logger.error("[%d] Exception %s", self.district, str(e))
+                traceback.print_exc(file=sys.stdout)
 
     def get_ac_booths(self):
         global killThreads
@@ -604,7 +602,7 @@ class BoothsDataDownloader:
                 return remove_from_failed_list(id)
 
             except (socket.timeout, requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
-                logger.error("[%d_%d_%d] timeout, retry %d", self.district, self.ac, id, retry_count)
+                logger.error("[%d_%d_%d] timeout, retry %d % bytes", self.district, self.ac, id, retry_count, bytes)
                 logger.error(str(e))
                 add_remove_proxy(self.proxy)
                 self.proxy={} if args.skipproxy else {'http': choice(PROXY_LIST)}
@@ -1413,6 +1411,37 @@ class ProcessImageFile():
         os.system(command)
         return process_input_text_file(args, text_file + ".txt")
 
+async def async_process_image_file(args, input_file):
+    if not os.path.isfile(input_file):
+        logger.error("Input file " + input_file + " does not exists, exiting...")
+        return 1
+
+    files=os.path.basename(input_file).split(".")
+    tiff_file=args.output + "/" + os.path.basename(input_file).replace(files[len(files)-1],'tiff')
+    logger.debug("Converting IMAGE to TEXT ...")
+    command="gs -dSAFER -dBATCH -dNOPAUSE -r300 -q -sDEVICE=tiffg4 -sOutputFile=" + tiff_file + " " + input_file
+    logger.debug(command)
+    proc = await asyncio.create_subprocess_exec(*command.split())
+    returncode = await proc.wait()
+    if returncode != 0:
+        logger.error("Failed to convert IMAGE TO TEXT, PHASE 1, return code: %s", returncode)
+        return 1
+
+    text_file=tiff_file.replace(".tiff", "")
+    logger.info("Converting IMAGE to TEXT file (Will take few minutes depending on the size)")
+    command="tesseract " + tiff_file + " " + text_file + " --psm 6 -l eng -c preserve_interword_spaces=1 quiet"
+    logger.debug(command)
+    proc = await asyncio.create_subprocess_exec(*command.split())
+    returncode = await proc.wait()
+    if returncode != 0:
+        logger.error("Failed to convert IMAGE TO TEXT, PHASE 2, return code: %s", returncode)
+        return 1
+    return returncode
+
+async def async_process_image_file_with_limits(args, sem, input_file):
+    async with sem:
+        return await async_process_image_file(args, input_file)
+
 def process_input_image_file(args, input_file):
      return ProcessImageFile(args, input_file).process()
 
@@ -1436,16 +1465,13 @@ def process_input_file(input_file, args):
                 if f.endswith(".pdf"):
                     pdf_files.append(os.path.join(root, f))
         logger.info("Found %d files in %s, processing using %d threads", len(pdf_files), input_file, args.threads)
-        count=0
-        with ThreadPoolExecutor(max_workers=args.threads) as executor:
-            for file in pdf_files:
-                if args.limit > 0 and count >= args.limit:
-                    logger.info("LIMIT %d reached, exiting...", args.limit)
-                    break
-                if killThreads:
-                    break
-                executor.submit(process_input_image_file, args, file)
-                count+=1
+        sem = asyncio.Semaphore(args.threads)
+        tasks = [
+            asyncio.ensure_future(async_process_image_file_with_limits(args, sem, pdf)) for pdf in pdf_files
+        ]
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(asyncio.gather(*tasks))
+        loop.close()
         return
     logger.error("Un-supported input file format, exiting")
 
