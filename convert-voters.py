@@ -633,7 +633,7 @@ class BoothsDataDownloader:
         outfile=self.args.output + "/" + str(self.district) + "_" + str(self.ac) + "/" + str(self.district) + "_" + str(self.ac) + "_" + str(id) + ".pdf"
 
         if not self.args.overwrite and os.path.isfile(outfile):
-            logger.warning("[%d_%d_%d] Booth file already exists and --force is not specified, skipped", self.district, self.ac, id)
+            logger.warning("[%d_%d_%d] Booth file already exists and --overwrite is not specified, skipped", self.district, self.ac, id)
             return remove_from_failed_list(id)
 
         os.makedirs(os.path.dirname(outfile), exist_ok=True)
@@ -701,7 +701,7 @@ class BoothsDataDownloader:
 
         except Exception as e:
             msg=str(e)
-            logger.error("[%d_%d_%d] Failed to process booth voters data for booth ID %d %s", self.district, self.ac, id, msg)
+            logger.error("[%d_%d_%d] Failed to process booth voters data for booth ID %d, %s", self.district, self.ac, id, id, msg)
             if "Max retries exceeded" in msg or "timed out" in msg:
                 add_remove_proxy(self.proxy)
         return add_to_failed_list(id)
@@ -1278,7 +1278,7 @@ def add_remove_proxy(proxy):
 
 def update_proxylist(current_proxy=list()):
     logger.debug("Updating PROXY LIST from %d to %d", len(current_proxy), MAX_PROXIES)
-    proxy_list = ProxyList().get(limit=10)
+    proxy_list = ProxyList().get(limit=8)
     for proxy in proxy_list:
         try:
             if proxy in PROXY_LIST_FAILED:
