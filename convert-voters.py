@@ -1524,7 +1524,7 @@ def handle_arguments(parser, args):
 if __name__ == "__main__":
     parser, args = init_options()
     logger.setLevel(logging.DEBUG) if args.debug else logger.setLevel(logging.INFO)
-
+    logger.info(args)
     if args.enable_lookups:
         try:
             REDIS=redis.Redis(host='localhost')
