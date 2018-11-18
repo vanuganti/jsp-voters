@@ -633,7 +633,7 @@ class BoothsDataDownloader:
         outfile=self.args.output + "/" + str(self.district) + "_" + str(self.ac) + "/" + str(self.district) + "_" + str(self.ac) + "_" + str(id) + ".pdf"
 
         if not self.args.overwrite and os.path.isfile(outfile):
-            logger.warning("[%d_%d_%d] Booth file already exists and --overwrite is not specified, skipped", self.district, self.ac, id)
+            logger.info("[%d_%d_%d] Booth file already exists and --overwrite is not specified, skipped", self.district, self.ac, id)
             return remove_from_failed_list(id)
 
         os.makedirs(os.path.dirname(outfile), exist_ok=True)
