@@ -61,6 +61,7 @@ def init_options():
     parser.add_argument('--skip-voters', dest='skipvoters', action='store_true', help='Skip voters data processing (limit to BOOTH details)')
     parser.add_argument('--skip-proxy', dest='skipproxy', action='store_true', help='Skip proxy to be used for requests')
     parser.add_argument('--enable-lookups', dest='enable_lookups', default=False, action='store_true', help='Enable lookups DB with cache (default False)')
+    parser.add_argument('--overwrite', dest='overwrite', default=False, action='store_true', help='Overwite if file already exists, if not skip processing')
     parser.add_argument('--limit', dest='limit', type=int, action='store', default=0, help='Limit total booths (default all booths)')
     parser.add_argument('--stdout', dest='stdout', action='store_true', help='Write output to stdout instead of CSV file')
     parser.add_argument('--input', dest='input', type=str, action='store', default=None, help='Use the input file specified instead of downloading')
@@ -271,6 +272,14 @@ class BoothsDataDownloader:
         self.proxy={} if args.skipproxy else {'http': choice(PROXY_LIST)}
         self.session=None
 
+    def __validate_proxy_for_errors(self):
+        if self.args.skipproxy:
+            self.proxy={}
+            return
+        if self.proxy and self.proxy in PROXY_LIST_FAILED:
+            update_proxylist(PROXY_LIST)
+            self.proxy= {'http': choice(PROXY_LIST)}
+
     def get_acs(self):
         global killThreads
 
@@ -451,15 +460,13 @@ class BoothsDataDownloader:
     def get_booth_voters(self, booth_id):
         if booth_id is None:
             return
-
         booth_id=int(booth_id)
-
         try:
             return self.__download_voters_by_booth_id(booth_id)
         except Exception as e:
-            logger.error("[%d_%d] Failed to process both voters data for booth ID %d", self.district, self.ac, booth_id)
+            logger.error("[%d_%d_%d] Failed to process both voters data for booth ID %d", self.district, self.ac, booth_id)
             logger.error(str(e))
-        return None
+        return add_remove_proxy(self.proxy)
 
     def __validate_proxy_get_request(self, random_proxy):
         try:
@@ -619,11 +626,16 @@ class BoothsDataDownloader:
         logger.info("[%d_%d_%d] Processing booth %d", self.district, self.ac, id, id)
 
         if id and id in SUCCESS_LIST:
-            logger.info("[%d_%d_%d] Booth already processed, skipping", self.district, self.ac, id, id)
+            logger.info("[%d_%d_%d] Booth already processed, skipping", self.district, self.ac, id)
             return remove_from_failed_list(id)
 
         url="http://ceoaperms.ap.gov.in/Electoral_Rolls/Popuppage.aspx?partNumber="+str(id)+"&roll=EnglishMotherRoll&districtName=DIST_" + str(self.district).zfill(2) + "&acname=AC_" + str(self.ac).zfill(3) + "&acnameeng=A" + str(self.ac).zfill(3) + "&acno=" + str(self.ac) + "&acnameurdu=" + str(self.ac).zfill(3)
         outfile=self.args.output + "/" + str(self.district) + "_" + str(self.ac) + "/" + str(self.district) + "_" + str(self.ac) + "_" + str(id) + ".pdf"
+
+        if not self.args.overwrite and os.path.isfile(outfile):
+            logger.warning("[%d_%d_%d] Booth file already exists and --force is not specified, skipped", self.district, self.ac, id)
+            return remove_from_failed_list(id)
+
         os.makedirs(os.path.dirname(outfile), exist_ok=True)
 
         if self.args.dryrun:
@@ -644,12 +656,16 @@ class BoothsDataDownloader:
                     if not self.session:
                         self.session = requests.Session()
 
+
                     self.session.headers.update({'User-Agent': choice(DESKTOP_AGENTS),'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'})
 
                     if retry_count > 0:
                         logger.debug("[%d_%d_%d] Retrying the download %d", self.district, self.ac, id, retry_count)
 
                     retry_count+=1
+
+                    if self.proxy:
+                        self.__validate_proxy_for_errors()
 
                     logger.debug("[%d_%d_%d]  post request without captcha start...", self.district, self.ac, id)
                     result = self.session.post(url, proxies=self.proxy, timeout=60)
@@ -684,10 +700,10 @@ class BoothsDataDownloader:
                     continue
 
         except Exception as e:
-            logger.error("[%d_%d] Failed to process booth voters data for booth ID %d", self.district, self.ac, id)
-            logger.error("Exception {}".format(str(e)))
-
-
+            msg=str(e)
+            logger.error("[%d_%d_%d] Failed to process booth voters data for booth ID %d %s", self.district, self.ac, id, msg)
+            if "Max retries exceeded" in msg or "timed out" in msg:
+                add_remove_proxy(self.proxy)
         return add_to_failed_list(id)
 
 
@@ -1256,13 +1272,13 @@ def add_remove_proxy(proxy):
         PROXY_LIST.remove(proxy['http'])
         if proxy['http'] not in PROXY_LIST_FAILED:
             PROXY_LIST_FAILED.append(proxy['http'])
-        if len(PROXY_LIST) <= 1:
+        if len(PROXY_LIST) <= 2:
             update_proxylist(PROXY_LIST)
         logger.info(PROXY_LIST)
 
 def update_proxylist(current_proxy=list()):
     logger.debug("Updating PROXY LIST from %d to %d", len(current_proxy), MAX_PROXIES)
-    proxy_list = ProxyList().get(limit=6)
+    proxy_list = ProxyList().get(limit=10)
     for proxy in proxy_list:
         try:
             if proxy in PROXY_LIST_FAILED:
