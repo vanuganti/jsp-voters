@@ -1214,10 +1214,13 @@ def download_ac_voters_data(args, district, ac, booth_data=None):
                 logger.info("[%d_%d] Booth data found from cache, %d booths", district, ac, int(data))
                 booth_data=range(1, int(data) + 1)
             else:
-                data=DownloadACBooths(args, district, ac).get()
-                if data is None:
+                for i in range(1,3):
+                    data=DownloadACBooths(args, district, ac).get()
+                    if data:
+                        break
                     logger.error("[%d_%d] Failed to download booth data", district, ac)
-                    return None
+                if not data:
+                    return
                 set_raw_key(str(district) + "_" + str(ac) + "_BOOTHS", len(data))
                 booth_data=range(1, len(data) + 1)
 
@@ -1246,7 +1249,7 @@ def download_ac_voters_data(args, district, ac, booth_data=None):
                 count+=1
 
             for i in range(2):
-                if len(FAILED_LIST) <= 0 or killThreads or args.limit > 0 and count >= args.limit:
+                if len(FAILED_LIST) <= 0 or killThreads or (args.limit > 0 and count >= args.limit):
                     break
                 logger.info("========= PROCESSING FAILED BOOTHS (%d) =============", len(FAILED_LIST))
                 with ThreadPoolExecutor(max_workers=args.threads) as executor:
@@ -1342,7 +1345,11 @@ def download_booths_data(args, district, ac):
                 acs=[ac['value'] for ac in ac_data]
                 logger.info("[{}] ACS: {}".format(district, acs))
 
+                count=0
                 for ac in acs:
+                    count+=1
+                    if count > 1:
+                        update_proxylist()
                     download_ac_voters_data(args, district, int(ac))
             else:
                 ac=int(ac)
