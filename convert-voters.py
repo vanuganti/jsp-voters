@@ -62,6 +62,7 @@ def init_options():
     parser.add_argument('--skip-proxy', dest='skipproxy', action='store_true', help='Skip proxy to be used for requests')
     parser.add_argument('--enable-lookups', dest='enable_lookups', default=False, action='store_true', help='Enable lookups DB with cache (default False)')
     parser.add_argument('--overwrite', dest='overwrite', default=False, action='store_true', help='Overwite if file already exists, if not skip processing')
+    parser.add_argument('--skip-cleanup', dest='skip_cleanup', default=False, action='store_true', help='Skip deleting intermediate files post processing')
     parser.add_argument('--limit', dest='limit', type=int, action='store', default=0, help='Limit total booths (default all booths)')
     parser.add_argument('--stdout', dest='stdout', action='store_true', help='Write output to stdout instead of CSV file')
     parser.add_argument('--input', dest='input', type=str, action='store', default=None, help='Use the input file specified instead of downloading')
@@ -549,7 +550,7 @@ class BoothsDataDownloader:
             logger.debug("[%d_%d_%d]  Captcha parsing done...", self.district, self.ac, id)
 
             if not captcha_text:
-                return add_to_failed_list(id)
+                continue
 
             inputs = BeautifulSoup(html, "lxml").findAll('input')
             view_state = ''
@@ -1281,7 +1282,7 @@ def add_remove_proxy(proxy):
 
 def update_proxylist(current_proxy=list()):
     logger.debug("Updating PROXY LIST from %d to %d", len(current_proxy), MAX_PROXIES)
-    proxy_list = ProxyList().get(limit=8)
+    proxy_list = ProxyList().get(limit=6)
     for proxy in proxy_list:
         try:
             if proxy in PROXY_LIST_FAILED:
@@ -1294,12 +1295,12 @@ def update_proxylist(current_proxy=list()):
             proxy_list.remove(proxy)
             if proxy not in PROXY_LIST_FAILED:
                 PROXY_LIST_FAILED.append(proxy)
-        except requests.exceptions.ProxyError as e:
+        except requests.exceptions.ProxyError:
             proxy_list.remove(proxy)
             if proxy not in PROXY_LIST_FAILED:
                 PROXY_LIST_FAILED.append(proxy)
             continue
-        except Exception as e:
+        except Exception:
             proxy_list.remove(proxy)
             if proxy not in PROXY_LIST_FAILED:
                 PROXY_LIST_FAILED.append(proxy)
@@ -1432,6 +1433,14 @@ class ProcessImageFile():
         command="tesseract '" + tiff_file + "' '" + text_file + "' --psm 6 -l eng -c preserve_interword_spaces=1"
         logger.debug(command)
         os.system(command)
+
+        if not self.args.skip_cleanup:
+            try:
+                if os.path.exists(tiff_file) and os.path.exists(text_file + ".txt"):
+                    os.remove(tiff_file)
+            except:
+                pass
+
         return process_input_text_file(args, text_file + ".txt")
 
 async def async_process_image_file(args, input_file):
@@ -1463,7 +1472,15 @@ async def async_process_image_file(args, input_file):
     if returncode != 0:
         logger.error("Failed to convert IMAGE TO TEXT %s, PHASE 2, return code: %s", input_file, returncode)
         return 0
-    return returncode
+
+    if not args.skip_cleanup:
+        try:
+            if os.path.exists(tiff_file) and os.path.exists(text_file + ".txt"):
+                os.remove(tiff_file)
+        except:
+            pass
+
+    return 0
 
 async def async_process_image_file_with_limits(args, sem, input_file):
     async with sem:
