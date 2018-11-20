@@ -1470,7 +1470,7 @@ async def async_process_image_file(args, input_file):
         logger.error("Failed to convert IMAGE TO TEXT %s, PHASE 1, return code: %s", input_file, returncode)
         return 0
 
-    logger.info("Converting IMAGE to TEXT file (Will take few minutes depending on the size)")
+    logger.info("Converting IMAGE to TEXT file (Will take few minutes depending on the size) %s", input_file)
     command="tesseract " + tiff_file + " " + text_file + " --psm 6 -l eng -c preserve_interword_spaces=1 quiet"
     logger.debug(command)
     proc = await asyncio.create_subprocess_exec(*command.split())
