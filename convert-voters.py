@@ -1420,16 +1420,21 @@ class ProcessImageFile():
     def process(self):
         if not os.path.isfile(self.input_file):
             logger.error("Input file " + self.input_file + " does not exists, exiting...")
-            sys.exit(1)
+            return
 
         files=os.path.basename(self.input_file).split(".")
         tiff_file=args.output + "/" + os.path.basename(self.input_file).replace(files[len(files)-1],'tiff')
+        text_file=tiff_file.replace(".tiff", "")
+
+        if os.path.exists(text_file + ".txt"):
+            logger.info("IMAGE already processed, skipping %s", self.input_file)
+            return
+
         logger.debug("Converting IMAGE to TEXT ...")
         command="gs -dSAFER -dBATCH -dNOPAUSE -r300 -q -sDEVICE=tiffg4 -sOutputFile='" + tiff_file + "' '" + self.input_file + "'"
         logger.debug(command)
         os.system(command)
-        text_file=tiff_file.replace(".tiff", "")
-        logger.info("Converting IMAGE to TEXT file (Will take few minutes depending on the size)")
+        logger.info("Converting IMAGE to TEXT file (Will take few minutes depending on the size) %s", self.input_file)
         command="tesseract '" + tiff_file + "' '" + text_file + "' --psm 6 -l eng -c preserve_interword_spaces=1"
         logger.debug(command)
         os.system(command)
@@ -1451,8 +1456,9 @@ async def async_process_image_file(args, input_file):
     files=os.path.basename(input_file).split(".")
     tiff_file=args.output + "/" + os.path.basename(input_file).replace(files[len(files)-1],'tiff')
     text_file=tiff_file.replace(".tiff", "")
-    if os.path.isfile(text_file +".txt"):
-        logger.warning("Input file %s skipped as the conversion already done", input_file)
+
+    if os.path.exists(text_file +".txt"):
+        logger.info("IMAGE already processed, skipping %s", input_file)
         return 0
 
     logger.debug("Converting IMAGE to TEXT ...")
