@@ -919,7 +919,7 @@ class ProcessTextFile():
                                 voters.append(data)
                             voter={}
                         last_match='NAME'
-                        names=re.split("Elector’s Name:|Elector Name[:;]|Electors Name[:;]|Elector's Name[:;]|Elector’s Name[:;]", sline)
+                        names=re.split("Elector’s Name:|Elector Name[:;]|Electors Name[:;]|Elector's Name[:;]|Elector’s Name[:;]|Elector’'s Name[:;]|Elector''s Name[:;]|Elector’’s Name[:;]", sline)
                         if "       " in prev_line:
                             ids=prev_line.split("       ")
                             logger.debug("IDS with spaces {}".format(ids))
@@ -994,10 +994,12 @@ class ProcessTextFile():
                                 count+=1
                         if count < len(voter):
                             logger.debug("Problem with matching the NAMES (found %d records for %d) for line %s, manually parsing", count, len(voter), sline)
-                            names=re.split("                               ", sline)
+                            names=re.split("                           ", sline)
                             count=0
+                            logger.debug(names)
                             for name in names:
                                 n=name.strip()
+                                logger.debug(n)
                                 if n and n != '':
                                     logger.debug(re.split(":|;", n))
                                     try:
@@ -1006,10 +1008,12 @@ class ProcessTextFile():
                                     except Exception:
                                         voter.setdefault(count,{}).update(NAME=nn[0].strip())
                                         pass
-                                    logger.debug(voter[count]["FS_NAME"])
+                                    logger.debug(voter[count]["NAME"])
                                     count+=1
                         continue
                     if "Husband's Name" in sline or "Father's Name" in sline or "Husband" in sline or "Father" in sline or "Mother's Name" in sline or "Mother" in sline or "Other's Name" in sline or "Others Name" in sline or "Other Name" in sline:
+                        if len(voter) <= 0:
+                            continue
                         last_match='FS_NAME'
                         names=re.split("Husband's Name[:;]|Husband Name[:;]|Husbands Name[:;]|Father's Name[:;]|Father Name[:;]|Fathers Name[:;]|Mothers Name[:;]|Mother Name[:;]|Mother's Name[:;]|Mother’s Name[:;]|Father's Name[;:]|Others Name[:;]|Other Name[:;]|Other's Name[:;]", sline)
                         count=0
