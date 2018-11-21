@@ -445,16 +445,36 @@ class BoothsDataDownloader:
                         break
 
                     data = ParseHtmlTableData(result.text, self.district, self.ac).parse()
+
                     if data and len(data) > 0:
                         boothsList=data
-                        logger.info("[%d_%d] Found %d booths", self.district, self.ac, len(data))
-                        booth_file=args.output + "/" + str(self.district) + "_" + str(self.ac) + "/" +str( self.district) + "_" + str(self.ac) + "_booths.csv"
+                        if self.args.db:
+                            col_order=['SNO','NAME', 'LOCATION', 'DC', 'AC']
+                            data_frame=pd.DataFrame(data, columns=col_order)
+                            global MYSQLDB
+                            if not MYSQLDB:
+                                try:
+                                    MYSQLDB = create_engine('mysql+mysqlconnector://jsp:jsp@192.168.86.2/jsp?auth_plugin=mysql_native_password', echo=False)
+                                except Exception as e:
+                                    logger.error("Failed to connect to MySQL %s", str(e))
+                                    MYSQLDB=None
+                            if MYSQLDB:
+                                try:
+                                    data_frame.to_sql(con=MYSQLDB, name='booths', if_exists='append', index=False)
+                                except Exception as e:
+                                    logger.error("Failed to write to MySQL %s", str(e))
+                                    pass
 
-                        os.makedirs(os.path.dirname(booth_file), exist_ok=True)
+                        else:
+                            boothsList=data
+                            logger.info("[%d_%d] Found %d booths", self.district, self.ac, len(data))
+                            booth_file=args.output + "/" + str(self.district) + "_" + str(self.ac) + "/" +str( self.district) + "_" + str(self.ac) + "_booths.csv"
 
-                        col_order=['POLLING STATION NO','POLLING STATION NAME', 'POLLING STATTION LOCATION', 'DISTRICT', 'ASSEMBLY']
-                        data_frame=pd.DataFrame(data, columns=col_order)
-                        data_frame.to_csv(booth_file, index=False)
+                            os.makedirs(os.path.dirname(booth_file), exist_ok=True)
+
+                            col_order=['POLLING STATION NO','POLLING STATION NAME', 'POLLING STATTION LOCATION', 'DISTRICT', 'ASSEMBLY']
+                            data_frame=pd.DataFrame(data, columns=col_order)
+                            data_frame.to_csv(booth_file, index=False)
                         break
 
                 else:
@@ -1368,6 +1388,11 @@ def update_proxylist(current_proxy=list()):
     else:
         PROXY_LIST=[]
 
+
+async def async_download_ac_voters_data(args, sem, district, ac):
+    async with sem:
+        return await download_ac_voters_data(args, district, int(ac))
+
 #
 # Download booth data
 #
@@ -1399,11 +1424,20 @@ def download_booths_data(args, district, ac):
                 logger.info("[{}] ACS: {}".format(district, acs))
 
                 count=0
-                for ac in acs:
-                    count+=1
-                    if count > 1:
-                        update_proxylist()
-                    download_ac_voters_data(args, district, int(ac))
+                if len(acs) > 0 and args.skipvoters and args.threads > 0:
+                    sem = asyncio.Semaphore(args.threads)
+                    tasks = [
+                        asyncio.ensure_future(async_download_ac_voters_data(args, sem, district, ac)) for ac in acs
+                    ]
+                    loop = asyncio.get_event_loop()
+                    loop.run_until_complete(asyncio.gather(*tasks))
+                    loop.close()
+                else:
+                    for ac in acs:
+                        count+=1
+                        if count > 1:
+                            update_proxylist()
+                        download_ac_voters_data(args, district, int(ac))
             else:
                 ac=int(ac)
                 logger.info("[%d_%d] Download the booth data", district, ac)
