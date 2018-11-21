@@ -75,6 +75,7 @@ def init_options():
     parser.add_argument('--enable-lookups', dest='enable_lookups', default=False, action='store_true', help='Enable lookups DB with cache (default False)')
     parser.add_argument('--overwrite', dest='overwrite', default=False, action='store_true', help='Overwite if file already exists, if not skip processing')
     parser.add_argument('--skip-cleanup', dest='skip_cleanup', default=False, action='store_true', help='Skip deleting intermediate files post processing')
+    parser.add_argument('--stop-on-error', dest='stop_on_error', default=False, action='store_true', help='Skip processing upon an error')
     parser.add_argument('--limit', dest='limit', type=int, action='store', default=0, help='Limit total booths (default all booths)')
     parser.add_argument('--stdout', dest='stdout', action='store_true', help='Write output to stdout instead of CSV file')
     parser.add_argument('--input', dest='input', type=str, action='store', default=None, help='Use the input file specified instead of downloading')
@@ -905,7 +906,8 @@ class ProcessTextFile():
                                     logger.error("ERROR RECORD: {}".format(data))
                                     logger.info(voter)
                                     logger.info("CURRENT LINE {} : {}, PREVIOUS LINE ".format(lno, sline, prev_line))
-                                    return
+                                    if args.stop_on_error:
+                                        return
                                 try:
                                     lsn=int(voter[v][0]['SNO'])
                                     if lsn > last_lsn:
