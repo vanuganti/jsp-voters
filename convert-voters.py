@@ -1079,6 +1079,10 @@ class ProcessTextFile():
                             obj=obj.strip()
                             if "Age" in obj:
                                 try:
+                                    if age and sex is None:
+                                        voter.setdefault(count,{}).update(SEX='')
+                                        count+=1
+
                                     c=index+1
                                     age=""
                                     while True:
@@ -1094,6 +1098,9 @@ class ProcessTextFile():
                                     pass
                             elif "Sex" in obj:
                                 try:
+                                    if sex and age is None:
+                                        voter.setdefault(count,{}).update(AGE=0)
+                                        count+=1
                                     c=index+1
                                     sex=""
                                     while True:
@@ -1106,6 +1113,11 @@ class ProcessTextFile():
                                     sex=''
                                     voter.setdefault(count,{}).update(SEX=sex)
                                     pass
+
+                            if age and sex is None and (obj == 'Male' or obj == 'Female'):
+                                voter.setdefault(count,{}).update(SEX=obj)
+                                sex=obj
+
                             if age and sex:
                                 logger.debug(voter[count])
                                 count+=1
