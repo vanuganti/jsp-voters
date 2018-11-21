@@ -26,6 +26,8 @@ import hashlib
 import redis
 from io import BytesIO
 import socket
+import mysql.connector
+from sqlalchemy import create_engine
 
 try:
     from PIL import Image, ImageEnhance, ImageFilter
@@ -45,6 +47,16 @@ killThreads=False
 CSVLOCK=threading.Lock()
 REDIS=None
 MAX_PROXIES=6
+MYSQLDB=None
+
+mysql_config = {
+    'user': 'jsp',
+    'password': 'jsp',
+    'host': '192.168.86.2',
+    'database': 'jsp',
+    'raise_on_warnings': False,
+    'auth_plugin': 'mysql_native_password'
+}
 
 ###################################################################################################
 # Option handling
@@ -68,6 +80,7 @@ def init_options():
     parser.add_argument('--input', dest='input', type=str, action='store', default=None, help='Use the input file specified instead of downloading')
     parser.add_argument('--csv', dest='csv', action='store_true', default=False, help='Create CSV file, default False')
     parser.add_argument('--xls', dest='xls', action='store_true', default=False, help='Create XLS file, default False')
+    parser.add_argument('--db', dest='db', action='store_true', default=False, help='Write to database, default False')
     parser.add_argument('--output', dest='output', type=str, action='store', default='output', help='Output folder to store extracted files (default "output")')
     parser.add_argument('--s3', dest='s3', type=str, action='store', default=None, help='s3 bucket name to store final csv file')
     return parser, parser.parse_args()
@@ -1119,8 +1132,29 @@ class ProcessTextFile():
             metadata['BOOTH']=re.sub("Number of Auxillary Polling|Stations in this Part:|  ","",metadata['BOOTH'].replace("\n",",").strip()).strip()
             if len(voters) > 0:
                 try:
+                    splits=os.path.basename(self.input_file).split(".")[0].split("_")
                     col_order=['SNO','ID','NAME','FS_NAME','HNO','AGE','SEX','AREA']
                     data_frame=pd.DataFrame(voters, columns=col_order)
+                    data_frame['DC']=splits[0]
+                    data_frame['AC']=splits[1]
+                    data_frame['BOOTH']=splits[2]
+
+                    if args.db:
+                        global MYSQLDB
+                        if not MYSQLDB:
+                            try:
+                                #MYSQLDB = mysql.connector.connect(**mysql_config)
+                                MYSQLDB = create_engine('mysql+mysqlconnector://jsp:jsp@192.168.86.2/jsp?auth_plugin=mysql_native_password', echo=False)
+                            except Exception as e:
+                                logger.error("Failed to connect to MySQL %s", str(e))
+                                MYSQLDB=None
+                        if MYSQLDB:
+                            try:
+                                data_frame.to_sql(con=MYSQLDB, name='voters', if_exists='append', index=False)
+                            except Exception as e:
+                                logger.error("Failed to write to MySQL %s", str(e))
+                                pass
+
                     if args.csv:
                         outfile=os.path.basename(self.input_file).split(".")[0] + ".csv" if self.input_file else "output.csv"
                         if args.output:
@@ -1143,7 +1177,7 @@ class ProcessTextFile():
                         writer.save()
                         logger.debug("XLS Output is saved in %s file", outfile)
 
-                    if not args.csv and not args.xls:
+                    if not args.csv and not args.xls and not args.db:
                         logger.info("No output file supplied, printing to STDOUT")
                         print("\nOUTPUT RECORDS: \n\n")
                         for voter in voters:
