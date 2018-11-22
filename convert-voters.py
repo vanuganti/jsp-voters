@@ -47,15 +47,16 @@ killThreads=False
 CSVLOCK=threading.Lock()
 REDIS=None
 MAX_PROXIES=6
+DBENGINE=None
 MYSQLDB=None
 
+mysql_config_alchecmy='mysql+mysqlconnector://jsp:jsp@192.168.86.2/jsp?auth_plugin=mysql_native_password'
 mysql_config = {
     'user': 'jsp',
     'password': 'jsp',
     'host': '192.168.86.2',
     'database': 'jsp',
     'raise_on_warnings': False,
-    'auth_plugin': 'mysql_native_password'
 }
 
 ###################################################################################################
@@ -66,7 +67,7 @@ def init_options():
     parser = argparse.ArgumentParser(description='Parse voters data from image file to CSV')
     parser.add_argument('--debug', dest='debug', action='store_true', help='Enable debug mode')
     parser.add_argument('--district', dest='district', type=int, action='store', default=None, help='Specific district to be dumped (default None)')
-    parser.add_argument('--ac', dest='ac', type=int, action='store', default=None, help='Specific assembly constituency to be dumped (default all constituencies)')
+    parser.add_argument('--ac', dest='ac', type=str, action='store', default=None, help='Specific assembly constituency to be dumped (comma separated, default all constituencies)')
     parser.add_argument('--booths', dest='booths', type=str, action='store', default=None, help='Limit search to the specific booth IDs, separated by comma= (default None)')
     parser.add_argument('--threads', dest='threads', type=int, action='store', default=1, help='Max threads (default 1)')
     parser.add_argument('--dry-run', dest='dryrun', action='store_true', help='Dry run to test')
@@ -368,7 +369,7 @@ class BoothsDataDownloader:
                 if acList is None or len(acList) == 0:
                     logger.error("[%d] FAILED TO PROCESS, NO AC DATA FOUND", self.district)
                     continue
-                return acList
+                return [ac['value'] for ac in acList]
 
             except KeyboardInterrupt:
                 logger.error("Keyboard interrupt received, killing it")
@@ -451,16 +452,9 @@ class BoothsDataDownloader:
                         if self.args.db:
                             col_order=['SNO','NAME', 'LOCATION', 'DC', 'AC']
                             data_frame=pd.DataFrame(data, columns=col_order)
-                            global MYSQLDB
-                            if not MYSQLDB:
+                            if DBENGINE:
                                 try:
-                                    MYSQLDB = create_engine('mysql+mysqlconnector://jsp:jsp@192.168.86.2/jsp?auth_plugin=mysql_native_password', echo=False)
-                                except Exception as e:
-                                    logger.error("Failed to connect to MySQL %s", str(e))
-                                    MYSQLDB=None
-                            if MYSQLDB:
-                                try:
-                                    data_frame.to_sql(con=MYSQLDB, name='booths', if_exists='append', index=False)
+                                    data_frame.to_sql(con=DBENGINE, name='booths', if_exists='append', index=False)
                                 except Exception as e:
                                     logger.error("Failed to write to MySQL %s", str(e))
                                     pass
@@ -1178,17 +1172,9 @@ class ProcessTextFile():
                     data_frame['BOOTH']=splits[2]
 
                     if args.db:
-                        global MYSQLDB
-                        if not MYSQLDB:
+                        if DBENGINE:
                             try:
-                                #MYSQLDB = mysql.connector.connect(**mysql_config)
-                                MYSQLDB = create_engine('mysql+mysqlconnector://jsp:jsp@192.168.86.2/jsp?auth_plugin=mysql_native_password', echo=False)
-                            except Exception as e:
-                                logger.error("Failed to connect to MySQL %s", str(e))
-                                MYSQLDB=None
-                        if MYSQLDB:
-                            try:
-                                data_frame.to_sql(con=MYSQLDB, name='voters', if_exists='append', index=False)
+                                data_frame.to_sql(con=DBENGINE, name='voters', if_exists='append', index=False)
                             except Exception as e:
                                 logger.error("Failed to write to MySQL %s", str(e))
                                 pass
@@ -1261,7 +1247,21 @@ class DownloadACs:
         self.district=district
 
     def get(self):
-        return BoothsDataDownloader(self.args, int(self.district)).get_acs()
+        acs=None
+        global MYSQLDB
+        if MYSQLDB:
+            try:
+                MYSQLDB.ping(reconnect=True, attempts=1, delay=0)
+                cursor = MYSQLDB.cursor()
+                cursor.execute("SELECT GROUP_CONCAT(distinct ac) as acs FROM booths WHERE DC=" + str(self.district) + " LIMIT 1")
+                results = cursor.fetchall()
+                for row in results:
+                    acs=row[0]
+                cursor.close()
+            except Exception as e:
+                logger.error("[%d] Failed to fetch ACs from DB %s", self.district, str(e))
+                pass
+        return acs.split(",") if acs else BoothsDataDownloader(self.args, int(self.district)).get_acs()
 
 class DownloadACBooths:
     def __init__(self, args, district, ac):
@@ -1281,12 +1281,25 @@ def download_ac_voters_data(args, district, ac, booth_data=None):
 
     try:
         if booth_data is None:
-            logger.info("[%d_%d] Missing booth data, downloading ...", district, ac)
-            data=get_raw_key(str(district) + "_" + str(ac) + "_BOOTHS")
+            data=None
+            global MYSQLDB
+            if MYSQLDB:
+                try:
+                    MYSQLDB.ping(reconnect=True, attempts=1, delay=0)
+                    cursor = MYSQLDB.cursor()
+                    cursor.execute("SELECT COUNT(*) as BOOTHS from booths WHERE DC=" + str(district) + " and ac=" + str(ac) + " LIMIT 1")
+                    results = cursor.fetchall()
+                    for row in results:
+                        data=row[0]
+                    cursor.close()
+                except Exception as e:
+                    logger.error("[%d_%d] Failed to fetch BOOTH count from DB %s", district, ac, str(e))
+                    pass
             if data and data is not None:
-                logger.info("[%d_%d] Booth data found from cache, %d booths", district, ac, int(data))
+                logger.info("[%d_%d] Booth data found, %d booths", district, ac, int(data))
                 booth_data=range(1, int(data) + 1)
             else:
+                logger.info("[%d_%d] Missing booth data, downloading ...", district, ac)
                 for i in range(1,3):
                     data=DownloadACBooths(args, district, ac).get()
                     if data:
@@ -1294,7 +1307,6 @@ def download_ac_voters_data(args, district, ac, booth_data=None):
                     logger.error("[%d_%d] Failed to download booth data", district, ac)
                 if not data:
                     return
-                set_raw_key(str(district) + "_" + str(ac) + "_BOOTHS", len(data))
                 booth_data=range(1, len(data) + 1)
 
         if args.skipvoters:
@@ -1397,9 +1409,7 @@ async def async_download_ac_voters_data(args, sem, district, ac):
 # Download booth data
 #
 def download_booths_data(args, district, ac):
-    global killThreads
-    global TOTAL_COUNT
-    global PROXY_LIST
+    global killThreads, TOTAL_COUNT, PROXY_LIST
 
     district=int(district)
 
@@ -1415,12 +1425,11 @@ def download_booths_data(args, district, ac):
             download_ac_voters_data(args, district, ac, booth_data)
         else:
             if ac is None:
-                logger.info("[%d] Missing AC details, fetching AC names", district)
-                ac_data=DownloadACs(args, district).get()
-                if ac_data is None:
+                logger.info("[%d] Missing AC details, fetching AC names from DB", district)
+                acs=DownloadACs(args, district).get()
+                if acs is None:
                     logger.error("[%d] Failed to download AC data", district)
                     return
-                acs=[ac['value'] for ac in ac_data]
                 logger.info("[{}] ACS: {}".format(district, acs))
 
                 count=0
@@ -1439,17 +1448,10 @@ def download_booths_data(args, district, ac):
                             update_proxylist()
                         download_ac_voters_data(args, district, int(ac))
             else:
-                ac=int(ac)
-                logger.info("[%d_%d] Download the booth data", district, ac)
-                data=get_raw_key(str(district) + "_" + str(ac) + "_BOOTHS")
-                if data is not None:
-                    logger.info("[%d_%d] Booth data found from cache, %d booths", district, ac, int(data))
-                    booth_data=range(1, int(data) + 1)
-                else:
-                    data=DownloadACBooths(args, district, ac).get()
-                    set_raw_key(str(district) + "_" + str(ac) + "_BOOTHS", len(data))
-                    booth_data=range(1, len(data) + 1)
-                download_ac_voters_data(args, district, ac, booth_data)
+                aclist=ac.split(",")
+                for ac in aclist:
+                    ac=int(ac)
+                    download_ac_voters_data(args, district, int(ac))
 
     except KeyboardInterrupt:
         logger.error("Keyboard interrupt received, killing it")
@@ -1648,5 +1650,14 @@ if __name__ == "__main__":
         except Exception as e:
             logger.exception("Failed to connect to Redis, skipping the MD5 lookups")
             REDIS=None
+
+    if args.db:
+        try:
+            MYSQLDB = mysql.connector.connect(**mysql_config)
+            DBENGINE = create_engine(mysql_config_alchecmy, echo=False)
+        except Exception as e:
+            logger.error("Failed to connect to MySQL %s", str(e))
+            DBENGINE=None
+            MYSQLDB=None
     handle_arguments(parser, args)
 
