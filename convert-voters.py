@@ -127,7 +127,7 @@ class ProxyList:
         broker = Broker(proxies)
 
         proxy_list=[]
-        tasks = asyncio.gather(broker.find(types=['HTTP'], post=True, strict=True, limit=limit, countries=['US', 'SG', 'CA']), self.__append_list(proxy_list, proxies))
+        tasks = asyncio.gather(broker.find(types=['HTTP'], post=True, strict=True, limit=limit, countries=['US', 'IN', 'SG', 'CA']), self.__append_list(proxy_list, proxies))
         loop = asyncio.get_event_loop()
         loop.run_until_complete(tasks)
         return proxy_list
@@ -141,6 +141,7 @@ class ImageToText:
         self.session = session
         self.url = url
         self.proxy = proxy
+        self.failed_count=0
 
         if self.session and url:
             self.session.headers.update({'referer': self.url})
@@ -158,21 +159,27 @@ class ImageToText:
 
             captcha_image = BytesIO()
             for chunk in response:
+                if self.failed_count > 25:
+                    return None
                 captcha_image.write(chunk)
 
             img = Image.open(captcha_image)
             with BytesIO() as f:
+                if self.failed_count > 25:
+                    return None
                 img.save(f, format="png", quality=600)
                 img_png=Image.open(f)
                 return pytesseract.image_to_string(img_png, lang='eng', config='-c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 --psm 6', nice=0)
-
         except KeyboardInterrupt:
             global killThreads
             logger.error("Keyboard interrupt received, killing it")
             killThreads = True
             return None
         except Exception as e:
+            self.failed_count+=1
             logger.error("Failed to parse captcha, " + str(e))
+            if "cannot identify image file" in str(e):
+                return None
             if "Max retries exceeded" in str(e):
                 add_remove_proxy(self.proxy)
             return None
