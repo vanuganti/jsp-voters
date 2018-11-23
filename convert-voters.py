@@ -123,13 +123,15 @@ class ProxyList:
             proxy_list.append(proxy.host + ":" + str(proxy.port))
 
     def get(self, limit=5):
-        proxies = asyncio.Queue()
-        broker = Broker(proxies)
-
         proxy_list=[]
-        tasks = asyncio.gather(broker.find(types=['HTTP'], post=True, strict=True, limit=limit, countries=['US', 'IN', 'SG', 'CA']), self.__append_list(proxy_list, proxies))
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(tasks)
+        try:
+            proxies = asyncio.Queue()
+            broker = Broker(proxies)
+            tasks = asyncio.gather(broker.find(types=['HTTP'], post=True, strict=True, limit=limit, countries=['US', 'IN', 'SG', 'CA']), self.__append_list(proxy_list, proxies))
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(tasks)
+        except Exception as e:
+            logger.error("Failed to get proxy {}, current list {}".format(str(e), proxy_list))
         return proxy_list
 
 #
@@ -156,7 +158,6 @@ class ImageToText:
             if response.status_code != 200:
                 logger.error(response)
                 return None
-
             captcha_image = BytesIO()
             for chunk in response:
                 if self.failed_count > 25:
@@ -659,7 +660,6 @@ class BoothsDataDownloader:
 
 
     def __download_voters_by_booth_id(self, id):
-        logger.info("[%d_%d_%d] Processing booth %d", self.district, self.ac, id, id)
 
         if id and id in SUCCESS_LIST:
             logger.info("[%d_%d_%d] Booth already processed, skipping", self.district, self.ac, id)
@@ -671,6 +671,8 @@ class BoothsDataDownloader:
         if not self.args.overwrite and os.path.isfile(outfile):
             logger.info("[%d_%d_%d] Booth file already exists and --overwrite is not specified, skipped", self.district, self.ac, id)
             return remove_from_failed_list(id)
+
+        logger.info("[%d_%d_%d] Processing booth %d", self.district, self.ac, id, id)
 
         os.makedirs(os.path.dirname(outfile), exist_ok=True)
 
@@ -1284,12 +1286,11 @@ class DownloadVotersByBooth:
         BoothsDataDownloader(args, int(district), int(ac)).get_booth_voters(int(id))
 
 def download_ac_voters_data(args, district, ac, booth_data=None):
-    global killThreads
+    global killThreads, MYSQLDB
 
     try:
         if booth_data is None:
             data=None
-            global MYSQLDB
             if MYSQLDB:
                 try:
                     MYSQLDB.ping(reconnect=True, attempts=1, delay=0)
@@ -1303,7 +1304,7 @@ def download_ac_voters_data(args, district, ac, booth_data=None):
                     logger.error("[%d_%d] Failed to fetch BOOTH count from DB %s", district, ac, str(e))
                     pass
             if data and data is not None:
-                logger.info("[%d_%d] Booth data found, %d booths", district, ac, int(data))
+                logger.info("[%d_%d] Booth data found from DB, %d booths", district, ac, int(data))
                 booth_data=range(1, int(data) + 1)
             else:
                 logger.info("[%d_%d] Missing booth data, downloading ...", district, ac)
@@ -1450,9 +1451,6 @@ def download_booths_data(args, district, ac):
                     loop.close()
                 else:
                     for ac in acs:
-                        count+=1
-                        if count > 1:
-                            update_proxylist()
                         download_ac_voters_data(args, district, int(ac))
             else:
                 aclist=ac.split(",")
@@ -1666,5 +1664,7 @@ if __name__ == "__main__":
             logger.error("Failed to connect to MySQL %s", str(e))
             DBENGINE=None
             MYSQLDB=None
+    else:
+        logger.info("DB is skipped")
     handle_arguments(parser, args)
 
