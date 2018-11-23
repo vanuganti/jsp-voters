@@ -178,9 +178,7 @@ class ImageToText:
             return None
         except Exception as e:
             self.failed_count+=1
-            logger.error("Failed to parse captcha, " + str(e))
-            if "cannot identify image file" in str(e):
-                return None
+            logger.error("Failed to parse captcha, %s - %d", str(e), self.failed_count)
             if "Max retries exceeded" in str(e):
                 add_remove_proxy(self.proxy)
             return None
@@ -190,6 +188,8 @@ class ImageToText:
     #
     def __get_text_from_image(self):
         for i in range(25):
+            if self.failed_count >= 25:
+                return None
             image_text = self.__image_to_text()
             if image_text is None:
                 return None
