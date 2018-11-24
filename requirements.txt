@@ -9,3 +9,5 @@ asyncio
 beautifulsoup4
 lxml
 requests
+mysql_connector
+sqlalchemy

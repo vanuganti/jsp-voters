@@ -9,7 +9,6 @@ import logging
 import argparse
 import os
 import requests
-import csv
 import sys
 import re
 import time
