@@ -943,7 +943,7 @@ class ProcessTextFile():
                         last_match='NAME'
                         names=re.split("Elector’s Name:|Elector Name[:;]|Electors Name[:;]|Elector's Name[:;]|Elector’s Name[:;]|Elector’'s Name[:;]|Elector''s Name[:;]|Elector’’s Name[:;]", sline)
                         if "       " in prev_line:
-                            ids=prev_line.split("       ")
+                            ids=prev_line.split("      ")
                             logger.debug("IDS with spaces {}".format(ids))
                             count=0
                             found_sno=None
@@ -952,9 +952,13 @@ class ProcessTextFile():
                                 id=ids[i].strip()
                                 if len(id) > 0:
                                     if id.isnumeric():
-                                        logger.debug("Found SNO %s at %d", id, i)
-                                        found_sno=id
-                                        continue
+                                        if not found_sno:
+                                            logger.debug("Found SNO %s at %d", id, i)
+                                            found_sno=id
+                                            continue
+                                        else:
+                                            logger.debug("Found ID %s at %d", id, i)
+                                            found_id=id.replace(" ","")
                                     else:
                                         if found_sno:
                                             logger.debug("Found ID %s at %d", id, i)
@@ -1153,7 +1157,10 @@ class ProcessTextFile():
                         for name in names:
                             n=name.strip()
                             if n and n != '':
-                                v_name=voter[count][last_match]
+                                try:
+                                    v_name=voter[count][last_match]
+                                except:
+                                    v_name=""
                                 v_name += " " + remove_special_chars(n)
                                 voter[count][last_match]=v_name
                                 count+=1
