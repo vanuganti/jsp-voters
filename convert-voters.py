@@ -1640,11 +1640,11 @@ def process_input_file(input_file, args):
 
         if args.text:
             tasks = [
-                asyncio.ensure_future(async_process_image_file_with_limits(args, sem, f)) for f in input_files
+                asyncio.ensure_future(async_process_text_file_with_limits(args, sem, f)) for f in input_files
             ]
         else:
             tasks = [
-                asyncio.ensure_future(async_process_text_file_with_limits(args, sem, f)) for f in input_files
+                asyncio.ensure_future(async_process_image_file_with_limits(args, sem, f)) for f in input_files
             ]
         loop = asyncio.get_event_loop()
         loop.run_until_complete(asyncio.gather(*tasks))
