@@ -73,6 +73,7 @@ def init_options():
     parser.add_argument('--skip-voters', dest='skipvoters', action='store_true', help='Skip voters data processing (limit to BOOTH details)')
     parser.add_argument('--skip-proxy', dest='skipproxy', action='store_true', help='Skip proxy to be used for requests')
     parser.add_argument('--enable-lookups', dest='enable_lookups', default=False, action='store_true', help='Enable lookups DB with cache (default False)')
+    parser.add_argument('--text', dest='text', default=False, action='store_true', help='Process input text files (default pdf)')
     parser.add_argument('--overwrite', dest='overwrite', default=False, action='store_true', help='Overwite if file already exists, if not skip processing')
     parser.add_argument('--skip-cleanup', dest='skip_cleanup', default=False, action='store_true', help='Skip deleting intermediate files post processing')
     parser.add_argument('--stop-on-error', dest='stop_on_error', default=False, action='store_true', help='Skip processing upon an error')
@@ -1587,9 +1588,29 @@ async def async_process_image_file(args, input_file):
 
     return 0
 
+
+async def async_process_text_file(args, input_file):
+    if not os.path.isfile(input_file):
+        logger.error("Input file " + input_file + " does not exists, exiting...")
+        return 1
+
+    logger.debug("Processing TEXT file %s ...", input_file)
+    command="python3 convert-voters.py --input " + input_file + " --db "
+    logger.debug(command)
+    proc = await asyncio.create_subprocess_exec(*command.split())
+    returncode = await proc.wait()
+    if returncode != 0:
+        logger.error("Failed to process TEXT file %s, return code: %s", input_file, returncode)
+        return 0
+    return 0
+
 async def async_process_image_file_with_limits(args, sem, input_file):
     async with sem:
         return await async_process_image_file(args, input_file)
+
+async def async_process_text_file_with_limits(args, sem, input_file):
+    async with sem:
+        return await async_process_text_file(args, input_file)
 
 def process_input_image_file(args, input_file):
      return ProcessImageFile(args, input_file).process()
@@ -1607,17 +1628,24 @@ def process_input_file(input_file, args):
         logger.info("Input file is PDF/IMAGE, doing image conversion")
         return process_input_image_file(args, input_file)
     if os.path.isdir(input_file):
-        logger.info("Input %s is a directory, finding all pdf files for processing", input_file)
-        pdf_files=[]
+        logger.info("Input %s is a directory, finding all %s files for processing", input_file, "TEXT" if args.text else "PDF")
+        input_files=[]
+        file_type = ".txt" if args.text else ".pdf"
         for root, dirs, files in os.walk(input_file):
             for f in files:
-                if f.endswith(".pdf"):
-                    pdf_files.append(os.path.join(root, f))
-        logger.info("Found %d files in %s, processing using %d threads", len(pdf_files), input_file, args.threads)
+                if f.endswith(file_type):
+                    input_files.append(os.path.join(root, f))
+        logger.info("Found %d files in %s, processing using %d threads", len(input_files), input_file, args.threads)
         sem = asyncio.Semaphore(args.threads)
-        tasks = [
-            asyncio.ensure_future(async_process_image_file_with_limits(args, sem, pdf)) for pdf in pdf_files
-        ]
+
+        if args.text:
+            tasks = [
+                asyncio.ensure_future(async_process_image_file_with_limits(args, sem, f)) for f in input_files
+            ]
+        else:
+            tasks = [
+                asyncio.ensure_future(async_process_text_file_with_limits(args, sem, f)) for f in input_files
+            ]
         loop = asyncio.get_event_loop()
         loop.run_until_complete(asyncio.gather(*tasks))
         loop.close()
