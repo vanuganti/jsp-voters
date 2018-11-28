@@ -127,7 +127,7 @@ class ProxyList:
         try:
             proxies = asyncio.Queue()
             broker = Broker(proxies)
-            tasks = asyncio.gather(broker.find(types=['HTTP'], post=True, strict=True, limit=limit, countries=['US','CA']), self.__append_list(proxy_list, proxies))
+            tasks = asyncio.gather(broker.find(types=['HTTP'], post=True, strict=True, limit=limit, countries=['IN', 'SG', 'US','CA']), self.__append_list(proxy_list, proxies))
             loop = asyncio.get_event_loop()
             loop.run_until_complete(tasks)
         except Exception as e:
@@ -621,6 +621,7 @@ class BoothsDataDownloader:
                 count=0
                 last_chunk=None
                 bytes=0
+                start_time=time.time()
 
                 with open(outfile, 'wb') as myfile:
                     logger.info("[%d_%d_%d]  Downloading the file %s %s", self.district, self.ac, id, outfile, "retry " + str(retry_count) if retry_count > 0 else "")
@@ -642,7 +643,8 @@ class BoothsDataDownloader:
                         logger.debug("[%d_%d_%d] Error occured in the page...", self.district, self.ac, id)
                         return "ERROR"
 
-                logger.info("[%d_%d_%d]  File %s downloaded, total bytes: %d", self.district, self.ac, id, outfile, bytes)
+                execution_time = round(time.time() - start_time, 0)
+                logger.info("[%d_%d_%d]  File %s downloaded, total bytes: %d in %d secs", self.district, self.ac, id, outfile, bytes, execution_time)
                 return remove_from_failed_list(id)
 
             except (socket.timeout, requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
