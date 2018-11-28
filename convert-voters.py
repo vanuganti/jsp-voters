@@ -1533,7 +1533,7 @@ class ProcessImageFile():
         logger.debug(command)
         os.system(command)
         logger.info("Converting IMAGE to TEXT file (Will take few minutes depending on the size) %s", self.input_file)
-        command="tesseract '" + tiff_file + "' '" + text_file + "' --psm 6 -l eng -c preserve_interword_spaces=1"
+        command="tesseract '" + tiff_file + "' '" + text_file + "' --psm 6 -l eng -c preserve_interword_spaces=1 quiet"
         logger.debug(command)
         os.system(command)
 
