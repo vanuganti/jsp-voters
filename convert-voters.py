@@ -624,7 +624,7 @@ class BoothsDataDownloader:
                 start_time=time.time()
 
                 with open(outfile, 'wb') as myfile:
-                    logger.info("[%d_%d_%d]  Downloading the file %s %s", self.district, self.ac, id, outfile, "retry " + str(retry_count) if retry_count > 0 else "")
+                    logger.info("[%d_%d_%d]  Downloading the file %s %s %s", self.district, self.ac, id, outfile, "retry " + str(retry_count) if retry_count > 0 else "", str(self.proxy) if self.proxy else "")
                     chunks = results.iter_content(chunk_size=1024*64)
                     for chunk in chunks:
                         last_chunk=chunk
