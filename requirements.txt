@@ -1,9 +1,12 @@
+requests
 redis
 pytesseract
 requests
 proxybroker
 pandas
 Image
+bs4
+lxml
 Pillow
 asyncio
 beautifulsoup4
@@ -11,3 +14,4 @@ lxml
 requests
 mysql_connector
 sqlalchemy
+XlsxWriter

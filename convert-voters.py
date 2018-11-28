@@ -1348,16 +1348,14 @@ def download_ac_voters_data(args, district, ac, booth_data=None):
                 executor.submit(DownloadVotersByBooth, args, district, ac, id)
                 count+=1
 
-            for i in range(2):
-                if len(FAILED_LIST) <= 0 or killThreads or (args.limit > 0 and count >= args.limit):
-                    break
-                logger.info("========= PROCESSING FAILED BOOTHS (%d) =============", len(FAILED_LIST))
-                with ThreadPoolExecutor(max_workers=args.threads) as executor:
-                    for id in FAILED_LIST:
-                        if killThreads or args.limit > 0 and count >= args.limit:
-                            break
-                        executor.submit(DownloadVotersByBooth, args, district, ac, id)
-                        count+=1
+        if len(FAILED_LIST) > 0:
+            logger.info("========= PROCESSING FAILED BOOTHS (%d) =============", len(FAILED_LIST))
+            with ThreadPoolExecutor(max_workers=args.threads) as executor:
+                for id in FAILED_LIST:
+                    if killThreads or args.limit > 0 and count >= args.limit:
+                        break
+                    executor.submit(DownloadVotersByBooth, args, district, ac, id)
+                    count+=1
 
         if len(FAILED_LIST) > 0:
             FAILED_LIST.sort()
