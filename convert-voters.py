@@ -127,7 +127,7 @@ class ProxyList:
         try:
             proxies = asyncio.Queue()
             broker = Broker(proxies)
-            tasks = asyncio.gather(broker.find(types=['HTTP'], post=True, strict=True, limit=limit, countries=['IN', 'SG', 'CA', 'USA']), self.__append_list(proxy_list, proxies))
+            tasks = asyncio.gather(broker.find(types=['HTTP'], post=True, strict=True, limit=limit), self.__append_list(proxy_list, proxies))
             loop = asyncio.get_event_loop()
             loop.run_until_complete(tasks)
         except Exception as e:
