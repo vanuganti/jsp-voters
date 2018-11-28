@@ -1052,7 +1052,7 @@ class ProcessTextFile():
                                 count+=1
                         if count < len(voter):
                             logger.debug("Problem with matching the FNAMES (found %d records for %d) for line %s, manually parsing", count, len(voter), sline)
-                            names=re.split("                             ", sline)
+                            names=re.split("                           ", sline)
                             count=0
                             for name in names:
                                 n=name.strip()
