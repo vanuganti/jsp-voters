@@ -644,7 +644,7 @@ class BoothsDataDownloader:
                         return "ERROR"
 
                 execution_time = round(time.time() - start_time, 0)
-                logger.info("[%d_%d_%d]  File %s downloaded, total bytes: %d in %d secs", self.district, self.ac, id, outfile, bytes, execution_time)
+                logger.info("[%d_%d_%d]  File %s downloaded in %d secs, total bytes: %d", self.district, self.ac, id, outfile, execution_time, bytes)
                 return remove_from_failed_list(id)
 
             except (socket.timeout, requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
