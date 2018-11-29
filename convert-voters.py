@@ -645,6 +645,9 @@ class BoothsDataDownloader:
 
                 execution_time = round(time.time() - start_time, 0)
                 logger.info("[%d_%d_%d]  File %s downloaded in %d secs, total bytes: %d", self.district, self.ac, id, outfile, execution_time, bytes)
+                if execution_time > 300 and self.proxy:
+                    logger.info("[%d_%d_%d]  Removing proxy %s due to slow response", self.district, self.ac, id, str(self.proxy))
+                    add_remove_proxy(self.proxy)
                 return remove_from_failed_list(id)
 
             except (socket.timeout, requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
