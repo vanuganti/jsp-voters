@@ -8,3 +8,5 @@ app/uploads
 input
 output
 test
+voters-data
+dc_*
