@@ -65,7 +65,7 @@ mysql_config = {
 def init_options():
     parser = argparse.ArgumentParser(description='Parse voters data from image file to CSV')
     parser.add_argument('--debug', dest='debug', action='store_true', help='Enable debug mode')
-    parser.add_argument('--district', dest='district', type=int, action='store', default=None, help='Specific district to be dumped (default None)')
+    parser.add_argument('--district', dest='district', type=int, action='store', default=None, help='Specific district to be dumped (default None)', aliases=['--dc'])
     parser.add_argument('--ac', dest='ac', type=str, action='store', default=None, help='Specific assembly constituency to be dumped (comma separated, default all constituencies)')
     parser.add_argument('--booths', dest='booths', type=str, action='store', default=None, help='Limit search to the specific booth IDs, separated by comma= (default None)')
     parser.add_argument('--threads', dest='threads', type=int, action='store', default=1, help='Max threads (default 1)')
@@ -85,6 +85,7 @@ def init_options():
     parser.add_argument('--db', dest='db', action='store_true', default=False, help='Write to database, default False')
     parser.add_argument('--output', dest='output', type=str, action='store', default='output', help='Output folder to store extracted files (default "output")')
     parser.add_argument('--s3', dest='s3', type=str, action='store', default=None, help='s3 bucket name to store final csv file')
+    parser.add_argument('--list-missing', dest='list_missing', action='store_true', default=False, help='List missing district, AC or booth data', aliases=['--find-missing', '--missing'])
     return parser, parser.parse_args()
 
 
@@ -1529,7 +1530,7 @@ class ProcessImageFile():
         tiff_file=args.output + "/" + os.path.basename(self.input_file).replace(files[len(files)-1],'tiff')
         text_file=tiff_file.replace(".tiff", "")
 
-        if os.path.exists(text_file + ".txt"):
+        if not args.overwrite and os.path.exists(text_file + ".txt"):
             logger.info("IMAGE already processed, skipping %s", self.input_file)
             return
 
@@ -1560,7 +1561,7 @@ async def async_process_image_file(args, input_file):
     tiff_file=args.output + "/" + os.path.basename(input_file).replace(files[len(files)-1],'tiff')
     text_file=tiff_file.replace(".tiff", "")
 
-    if os.path.exists(text_file +".txt"):
+    if not args.overwrite and os.path.exists(text_file +".txt"):
         logger.info("IMAGE already processed, skipping %s", input_file)
         return 0
 
@@ -1655,11 +1656,27 @@ def process_input_file(input_file, args):
         return
     logger.error("Un-supported input file format, exiting")
 
+def find_missing(args):
+    district=args.district
+    ac=args.ac
+    if district and district > 0:
+        if ac and ac > 0:
+            logger.info("Finding missing booth data for district %d, AC %d", district, ac)
+        else:
+            logger.info("Finding missing booth data for district %d", district)
+    else:
+        logger.info("Finding missing booth data for all districts")
+
+
+
 #
 # process all arguments
 #
 def handle_arguments(parser, args):
     input_file=None
+
+    if args.list_missing:
+        return find_missing(args)
 
     if args.output:
         os.makedirs(args.output, exist_ok=True)
