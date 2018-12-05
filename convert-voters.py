@@ -89,6 +89,20 @@ def init_options():
     return parser, parser.parse_args()
 
 
+def run_value_query(query):
+    global MYSQLDB
+    if MYSQLDB:
+        try:
+            MYSQLDB.ping(reconnect=True, attempts=1, delay=0)
+            cursor = MYSQLDB.cursor()
+            cursor.execute(query)
+            results = cursor.fetchall()
+            return results
+        except Exception as e:
+            logger.error(str(e))
+            pass
+    return None
+
 ###################################################################################################
 # Handle arguments
 ##########s#########################################################################################
@@ -1657,16 +1671,9 @@ def process_input_file(input_file, args):
     logger.error("Un-supported input file format, exiting")
 
 def find_missing(args):
-    district=args.district
-    ac=args.ac
-    if district and district > 0:
-        if ac and ac > 0:
-            logger.info("Finding missing booth data for district %d, AC %d", district, ac)
-        else:
-            logger.info("Finding missing booth data for district %d", district)
-    else:
-        logger.info("Finding missing booth data for all districts")
-
+    logger.info("MISSING DCS: {}".format(run_value_query("SELECT distinct d) as DC from booths WHERE dc NOT IN(select distinct DC from voters)")))
+    logger.info("MISSING ACS: {}".format(run_value_query("select CONCAT(dc,'-',ac)  as AC from booths where ac IN (SELECT distinct ac as ACS from booths WHERE ac NOT IN(select distinct AC from voters)) GROUP BY dc,ac")))
+    logger.info("MISSING BOOTHS: {}".format(run_value_query("select CONCAT(b.dc,'-',b.ac,'-',b.SNO) from booths b LEFT JOIN voters v ON(v.dc=b.dc and v.ac=b.ac and v.booth=b.SNO) WHERE v.booth IS NULL GROUP BY b.dc,b.ac,b.SNO")))
 
 
 #
@@ -1710,7 +1717,7 @@ if __name__ == "__main__":
             logger.exception("Failed to connect to Redis, skipping the MD5 lookups")
             REDIS=None
 
-    if args.db:
+    if args.db or args.list_missing:
         try:
             MYSQLDB = mysql.connector.connect(**mysql_config)
             DBENGINE = create_engine(mysql_config_alchecmy, echo=False)
