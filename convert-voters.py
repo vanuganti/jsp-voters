@@ -1671,7 +1671,7 @@ def process_input_file(input_file, args):
     logger.error("Un-supported input file format, exiting")
 
 def find_missing(args):
-    logger.info("MISSING DCS: {}".format(run_value_query("SELECT distinct d) as DC from booths WHERE dc NOT IN(select distinct DC from voters)")))
+    logger.info("MISSING DCS: {}".format(run_value_query("SELECT distinct dc as DC from booths WHERE dc NOT IN(select distinct DC from voters)")))
     logger.info("MISSING ACS: {}".format(run_value_query("select CONCAT(dc,'-',ac)  as AC from booths where ac IN (SELECT distinct ac as ACS from booths WHERE ac NOT IN(select distinct AC from voters)) GROUP BY dc,ac")))
     logger.info("MISSING BOOTHS: {}".format(run_value_query("select CONCAT(b.dc,'-',b.ac,'-',b.SNO) from booths b LEFT JOIN voters v ON(v.dc=b.dc and v.ac=b.ac and v.booth=b.SNO) WHERE v.booth IS NULL GROUP BY b.dc,b.ac,b.SNO")))
 
