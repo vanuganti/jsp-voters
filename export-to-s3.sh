@@ -17,7 +17,7 @@ done
 
 echo "Syncing to s3"
 cd /tmp/s3 && rm -rf *.csv
-cd /tmp/s3 && aws s3 sync s3://jsp-voters-data/data1/
+cd /tmp/s3 && aws s3 sync . s3://jsp-voters-data/data1/
 
 
 
