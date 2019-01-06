@@ -86,6 +86,7 @@ def init_options():
     parser.add_argument('--output', dest='output', type=str, action='store', default='output', help='Output folder to store extracted files (default "output")')
     parser.add_argument('--s3', dest='s3', type=str, action='store', default=None, help='s3 bucket name to store final csv file')
     parser.add_argument('--list-missing', dest='list_missing', action='store_true', default=False, help='List missing district, AC or booth data')
+    parser.add_argument('--metadata', dest='metadata', action='store_true', default=False, help='Parse metadata from first page')
     return parser, parser.parse_args()
 
 
@@ -1580,7 +1581,10 @@ async def async_process_image_file(args, input_file):
         return 0
 
     logger.debug("Converting IMAGE to TEXT ...")
-    command="gs -dSAFER -dBATCH -dNOPAUSE -r300 -q -sDEVICE=tiffg4 -sOutputFile=" + tiff_file + " " + input_file
+    if args.metadata:
+        command="gs -dSAFER -dFirstPage=1 -dLastPage=1 -dBATCH -dNOPAUSE -r300 -q -sDEVICE=tiffg4 -sOutputFile=" + tiff_file + " " + input_file
+    else:
+        command="gs -dSAFER -dBATCH -dNOPAUSE -r300 -q -sDEVICE=tiffg4 -sOutputFile=" + tiff_file + " " + input_file
     logger.debug(command)
     proc = await asyncio.create_subprocess_exec(*command.split())
     returncode = await proc.wait()
@@ -1589,7 +1593,10 @@ async def async_process_image_file(args, input_file):
         return 0
 
     logger.info("Converting IMAGE to TEXT file (Will take few minutes depending on the size) %s", input_file)
-    command="tesseract " + tiff_file + " " + text_file + " --psm 6 -l eng -c preserve_interword_spaces=1 quiet"
+    if args.metadata:
+        command="tesseract " + tiff_file + " " + text_file + " --psm 3 -l eng quiet"
+    else:
+        command="tesseract " + tiff_file + " " + text_file + " --psm 6 -l eng -c preserve_interword_spaces=1 quiet"
     logger.debug(command)
     proc = await asyncio.create_subprocess_exec(*command.split())
     returncode = await proc.wait()
