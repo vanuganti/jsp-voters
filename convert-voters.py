@@ -649,6 +649,10 @@ class BoothsDataDownloader:
                         myfile.write(chunk)
 
                 if count == 1 and last_chunk is not None:
+                    if b'Data will be uploaded shorlty' in last_chunk:
+                        logger.debug("[%d_%d_%d] No data file exists...", self.district, self.ac, id)
+                        return "STOP"
+
                     if b'Please enter correct captcha' in last_chunk or b'Enter Verifaction Code' in last_chunk:
                         logger.debug("[%d_%d_%d] Captcha failed %s. retrying %d...", self.district, self.ac, id, captcha_text, retry_count)
                         retry_count+=1
@@ -745,6 +749,10 @@ class BoothsDataDownloader:
                         continue
 
                     data = self.__process_captcha_request(url, outfile, result, id)
+                    if data and data == "STOP":
+                        logger.error("[%d_%d_%d] Exiting as BOOTH file is missing from source...", self.district, self.ac, id)
+                        return remove_from_failed_list(id)
+
                     if data and data == "ERROR":
                         logger.error("[%d_%d_%d] Failed to post request, retrying...", self.district, self.ac, id)
                         continue
