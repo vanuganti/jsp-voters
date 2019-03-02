@@ -38,7 +38,7 @@ logging.basicConfig(level=logging.ERROR, format='%(asctime)s %(lineno)-4d %(leve
 logger = logging.getLogger("convert-voters")
 logger.setLevel(logging.DEBUG)
 
-LOGIN_URL="http://ceoaperms.ap.gov.in/Electoral_Rolls/Rolls.aspx"
+LOGIN_URL="http://ceoaperms1.ap.gov.in/Electoral_Rolls/Rolls.aspx"
 TOTAL_COUNT=0
 FAILED_LIST=[]
 SUCCESS_LIST=[]
@@ -170,7 +170,7 @@ class ImageToText:
     #
     def __image_to_text(self):
         try:
-            response = self.session.get("http://ceoaperms.ap.gov.in/Electoral_Rolls/Captcha.aspx", stream=True, proxies=self.proxy)
+            response = self.session.get("http://ceoaperms1.ap.gov.in/Electoral_Rolls/Captcha.aspx", stream=True, proxies=self.proxy)
             if response.status_code != 200:
                 logger.error(response)
                 return None
@@ -690,7 +690,7 @@ class BoothsDataDownloader:
             logger.info("[%d_%d_%d] Booth already processed, skipping", self.district, self.ac, id)
             return remove_from_failed_list(id)
 
-        url="http://ceoaperms.ap.gov.in/Electoral_Rolls/Popuppage.aspx?partNumber="+str(id)+"&roll=EnglishMotherRoll&districtName=DIST_" + str(self.district).zfill(2) + "&acname=AC_" + str(self.ac).zfill(3) + "&acnameeng=A" + str(self.ac).zfill(3) + "&acno=" + str(self.ac) + "&acnameurdu=" + str(self.ac).zfill(3)
+        url="https://ceoaperms1.ap.gov.in/Electoral_Rolls/Popuppage.aspx?partNumber="+str(id)+"&roll=EnglishMotherRoll&districtName=DIST_" + str(self.district).zfill(2) + "&acname=AC_" + str(self.ac).zfill(3) + "&acnameeng=A" + str(self.ac).zfill(3) + "&acno=" + str(self.ac) + "&acnameurdu=" + str(self.ac).zfill(3)
         outfile=self.args.output + "/" + str(self.district) + "_" + str(self.ac) + "/" + str(self.district) + "_" + str(self.ac) + "_" + str(id) + ".pdf"
 
         if not self.args.overwrite and os.path.isfile(outfile):
@@ -736,6 +736,7 @@ class BoothsDataDownloader:
 
                     if not result:
                         logger.error("[%d_%d_%d] Failed to post for booth data, empty results", self.district,self.ac, id)
+                        logger.error(url)
                         return add_to_failed_list(id)
 
                     if result and result.status_code != 200:
@@ -1415,7 +1416,7 @@ def update_proxylist(current_proxy=list()):
                 proxy_list.remove(proxy)
                 continue
             p = {'http': proxy}
-            result= requests.post("http://ceoaperms.ap.gov.in/Electoral_Rolls/Rolls.aspx", proxies=p, timeout=15)
+            result= requests.post("http://ceoaperms1.ap.gov.in/Electoral_Rolls/Rolls.aspx", proxies=p, timeout=15)
             if result.status_code == 200:
                 continue
             proxy_list.remove(proxy)
