@@ -4,17 +4,21 @@
 * Document the process 
 
 # Features
-* Connects to [election commission website](https://ceoaperms1.ap.gov.in), authenticates and pulls the PDF images
+* Connects to [election commission website](http://ceoaperms1.ap.gov.in/Electoral_Rolls/Rolls.aspx), authenticates and pulls the PDF images
 * Converts downloaded or supplied PDF files to text
 * Converts extracted text file (or supplied one) to voters data as CSV
 * Loads the data into mysql database
 * Output can also be saved to S3/MySQL database (`--db --s3` arguments)
 * Basic validation on what data is missing at district or AC level
+* Supports [proxybroker](https://github.com/constverum/ProxyBroker) to use as white-lable IPs for rotation
 
 # Files
 * main conversion or parse tool [convert-voters.py](convert-voters.py)
 * [export-to-s3.sh](export-to-s3.sh) utility to export csv voter files to s3 
 * simple app to show current stats of the voters data
+
+# Website
+* simple server to upload files for processing or to download 
 
 # Usage
 ```
